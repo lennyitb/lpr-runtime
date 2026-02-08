@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/lenny/projects/lpr-runtime/build/_deps/sqlite3-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

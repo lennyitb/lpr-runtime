@@ -1,0 +1,12 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=url
+command=/opt/homebrew/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/lenny/projects/lpr-runtime/build/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/download-sqlite3-populate.cmake;COMMAND;/opt/homebrew/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/lenny/projects/lpr-runtime/build/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/verify-sqlite3-populate.cmake;COMMAND;/opt/homebrew/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/lenny/projects/lpr-runtime/build/_deps/sqlite3-subbuild/sqlite3-populate-prefix/src/sqlite3-populate-stamp/extract-sqlite3-populate.cmake
+source_dir=/Users/lenny/projects/lpr-runtime/build/_deps/sqlite3-src
+work_dir=/Users/lenny/projects/lpr-runtime/build/_deps
+url(s)=https://www.sqlite.org/2024/sqlite-amalgamation-3460000.zip
+hash=
+      no_extract=
+

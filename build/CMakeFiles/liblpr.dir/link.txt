@@ -1,0 +1,2 @@
+/usr/bin/ar qc liblpr.a CMakeFiles/liblpr.dir/src/core/commands.cpp.o CMakeFiles/liblpr.dir/src/core/context.cpp.o CMakeFiles/liblpr.dir/src/core/object.cpp.o CMakeFiles/liblpr.dir/src/core/parser.cpp.o CMakeFiles/liblpr.dir/src/core/store.cpp.o CMakeFiles/liblpr.dir/src/lpr_api.cpp.o
+/usr/bin/ranlib liblpr.a
