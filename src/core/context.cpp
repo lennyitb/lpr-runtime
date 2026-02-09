@@ -33,12 +33,83 @@ bool Context::exec(const std::string& input) {
     }
 }
 
+static bool is_arrow_command(const std::string& cmd) {
+    return cmd == "->" || cmd == "\xe2\x86\x92";
+}
+
 void Context::execute_tokens(const std::vector<Token>& tokens) {
-    for (const auto& tok : tokens) {
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const auto& tok = tokens[i];
         if (tok.kind == Token::Literal) {
             store_.push(tok.literal);
+        } else if (is_arrow_command(tok.command)) {
+            // Runstream-consuming: collect parameter names until we hit
+            // a Symbol or Program token (the body).
+            std::vector<std::string> names;
+            ++i;
+            while (i < tokens.size()) {
+                const auto& t = tokens[i];
+                if (t.kind == Token::Literal) {
+                    // Body found (Symbol or Program)
+                    break;
+                }
+                // Command token = parameter name (already uppercased)
+                names.push_back(t.command);
+                ++i;
+            }
+            if (i >= tokens.size()) {
+                throw std::runtime_error("-> missing body");
+            }
+            if (names.empty()) {
+                throw std::runtime_error("-> requires at least one variable name");
+            }
+
+            // Pop stack values and bind to names (first name binds deepest)
+            int n = static_cast<int>(names.size());
+            if (store_.depth() < n) {
+                throw std::runtime_error("Too few arguments for ->");
+            }
+            std::unordered_map<std::string, Object> frame;
+            // Pop in reverse: last name gets level 1, first name gets level N
+            std::vector<Object> vals(n);
+            for (int j = n - 1; j >= 0; --j) {
+                vals[j] = store_.pop();
+            }
+            for (int j = 0; j < n; ++j) {
+                frame[names[j]] = std::move(vals[j]);
+            }
+
+            push_locals(frame);
+
+            const auto& body_tok = tokens[i];
+            if (body_tok.kind == Token::Literal &&
+                std::holds_alternative<Program>(body_tok.literal)) {
+                execute_tokens(std::get<Program>(body_tok.literal).tokens);
+            } else if (body_tok.kind == Token::Literal &&
+                       std::holds_alternative<Symbol>(body_tok.literal)) {
+                // Evaluate the symbol expression
+                store_.push(body_tok.literal);
+                commands_.execute("EVAL", store_, *this);
+            } else {
+                pop_locals();
+                throw std::runtime_error("-> body must be a Symbol or Program");
+            }
+
+            pop_locals();
         } else {
-            commands_.execute(tok.command, store_, *this);
+            // Check if it's a known command first
+            if (commands_.has(tok.command)) {
+                commands_.execute(tok.command, store_, *this);
+            } else {
+                // Try local variable resolution, then treat as unknown command
+                auto local = resolve_local(tok.command);
+                if (local.has_value()) {
+                    store_.push(*local);
+                } else {
+                    // Not a local — let the registry throw the error
+                    commands_.execute(tok.command, store_, *this);
+                }
+            }
         }
     }
 }
@@ -90,6 +161,27 @@ bool Context::redo() {
     }
     store_.commit();
     return ok;
+}
+
+void Context::push_locals(const std::unordered_map<std::string, Object>& frame) {
+    local_scopes_.push_back(frame);
+}
+
+void Context::pop_locals() {
+    if (!local_scopes_.empty()) {
+        local_scopes_.pop_back();
+    }
+}
+
+std::optional<Object> Context::resolve_local(const std::string& name) const {
+    // Search innermost scope first
+    for (auto it = local_scopes_.rbegin(); it != local_scopes_.rend(); ++it) {
+        auto found = it->find(name);
+        if (found != it->end()) {
+            return found->second;
+        }
+    }
+    return std::nullopt;
 }
 
 } // namespace lpr

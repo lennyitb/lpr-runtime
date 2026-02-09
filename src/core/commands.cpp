@@ -1,6 +1,7 @@
 #include "core/commands.hpp"
 #include "core/context.hpp"
 #include "core/parser.hpp"
+#include "core/expression.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -557,8 +558,12 @@ void CommandRegistry::register_program_commands() {
             } else {
                 s.push(val);
             }
+        } else if (std::holds_alternative<Symbol>(a)) {
+            auto& expr = std::get<Symbol>(a).value;
+            Object result = eval_expression(expr, ctx);
+            s.push(result);
         } else {
-            s.push(a); // non-program/name: just push back
+            s.push(a); // non-program/name/symbol: just push back
         }
     });
 

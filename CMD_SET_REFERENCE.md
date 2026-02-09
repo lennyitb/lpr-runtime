@@ -164,7 +164,7 @@ PATH             => "HOME"
 
 | Command | Stack Effect | Description |
 |---------|-------------|-------------|
-| `EVAL`  | `( obj -- ... )` | Evaluate a program or recall a variable |
+| `EVAL`  | `( obj -- ... )` | Evaluate a program, recall a variable, or evaluate a symbol expression |
 | `IFT`   | `( then cond -- ... )` | If-then: execute `then` when `cond` is truthy |
 | `IFTE`  | `( else then cond -- ... )` | If-then-else: execute `then` or `else` based on `cond` |
 
@@ -172,6 +172,7 @@ PATH             => "HOME"
 
 - **Program**: executes the program's tokens
 - **Name**: recalls the variable; if it contains a Program, executes it
+- **Symbol**: parses the infix expression, substitutes variables (locals then globals), and pushes the numeric result
 - **Other types**: pushes the object back unchanged
 
 ### IFT / IFTE
@@ -186,7 +187,79 @@ A value is **truthy** if it is a non-zero numeric value (Integer, Real, Rational
 << "yes" >> 0 IFT                   (nothing pushed)
 << "no" >> << "yes" >> 1 IFTE       => "yes"
 << "no" >> << "yes" >> 0 IFTE       => "no"
+'2+3' EVAL                          => 5
+'(2+3)*(4-1)' EVAL                  => 15
+5 'X' STO  'X^2' EVAL              => 25.
 ```
+
+---
+
+## Local Binding (`->`)
+
+The `->` command (or its UTF-8 equivalent `→`) is a **runstream-consuming command**: unlike normal commands that take arguments from the stack, `->` reads variable names and a body directly from the token stream following it. This makes it fundamentally different from all other LPR commands.
+
+### Syntax
+
+```
+-> var1 var2 ... varN body
+```
+
+- **Variable names**: one or more bare names consumed from the runstream (not the stack)
+- **Body**: a single Program (`<< ... >>`) or Symbol (`'...'`) consumed from the runstream
+
+### Behavior
+
+1. `->` reads ahead in the token stream to collect variable names until it encounters a Program or Symbol literal (the body).
+2. It pops N values from the stack (one per variable name). The first name binds the deepest value, the last name binds level 1.
+3. A local scope frame is pushed with the bindings.
+4. The body is executed:
+   - **Program body**: tokens are executed directly
+   - **Symbol body**: the expression is evaluated via `EVAL` (infix expression with variable substitution)
+5. The local scope frame is popped when the body completes.
+
+### Local Variable Resolution
+
+Within the body, bound names resolve as local variables. Resolution order:
+
+1. **Local scopes** (innermost first) -- local bindings shadow outer ones
+2. **Global variables** (via STO/RCL filesystem)
+
+Local variables are transient execution state and are not stored in the variable filesystem.
+
+### Nesting
+
+`->` blocks can nest. An inner `->` creates a new scope frame that shadows outer bindings of the same name. When the inner body completes, its frame is removed and the outer bindings become visible again.
+
+**Examples:**
+
+```
+3 5 << -> X Y << X Y * >> >> EVAL           => 15
+10 20 << -> A B << A B + >> >> EVAL         => 30
+7 << -> N << N N * >> >> EVAL               => 49
+42 << -> N << N >> >> EVAL                  => 42
+3 5 << -> X Y 'X*Y' >> EVAL                => 15
+```
+
+**Nesting example:**
+
+```
+2 << -> X << 5 << -> X << X >> >> EVAL >> >> EVAL    => 5
+```
+
+The outer `->` binds X=2. The inner `->` binds X=5 in a new scope. The inner body sees X=5. After the inner body completes, X=2 is visible again.
+
+**Local shadows global:**
+
+```
+100 'X' STO
+5 << -> X << X >> >> EVAL    => 5    (local X=5 shadows global X=100)
+```
+
+### Errors
+
+- `-> missing body` -- no Symbol or Program found after the variable names
+- `-> requires at least one variable name` -- no names before the body
+- `Too few arguments for ->` -- stack has fewer values than variable names
 
 ---
 
@@ -213,7 +286,7 @@ When an operation involves two different numeric types, the lower-ranked operand
 |------|--------|-------------|
 | **String** | `"hello"` | Text; supports `\n`, `\t`, `\"`, `\\` escapes |
 | **Name** | `'x'` | Variable identifier (single-quoted) |
-| **Symbol** | `'X^2 + 1'` | Algebraic expression (single-quoted, contains operators) |
+| **Symbol** | `'X^2 + 1'` | Algebraic expression (single-quoted, contains operators); evaluable via `EVAL` |
 | **Program** | `<< DUP * >>` | Executable code block (guillemets) |
 | **Error** | (auto-generated) | Error with code and message |
 
@@ -268,6 +341,7 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 30 | `PATH` | Filesystem | 0 | Current directory path |
 | 31 | `CRDIR` | Filesystem | 1 | Create subdirectory |
 | 32 | `VARS` | Filesystem | 0 | List variables |
-| 33 | `EVAL` | Program | 1 | Evaluate object |
+| 33 | `EVAL` | Program | 1 | Evaluate object (program, name, or symbol expression) |
 | 34 | `IFT` | Program | 2 | Conditional (if-then) |
 | 35 | `IFTE` | Program | 3 | Conditional (if-then-else) |
+| 36 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |

@@ -5,6 +5,8 @@
 #include "core/object.hpp"
 #include <vector>
 #include <string>
+#include <unordered_map>
+#include <optional>
 
 namespace lpr {
 
@@ -32,9 +34,15 @@ public:
 
     Store& store() { return store_; }
 
+    // Local variable scope stack
+    void push_locals(const std::unordered_map<std::string, Object>& frame);
+    void pop_locals();
+    std::optional<Object> resolve_local(const std::string& name) const;
+
 private:
     Store store_;
     CommandRegistry commands_;
+    std::vector<std::unordered_map<std::string, Object>> local_scopes_;
 };
 
 } // namespace lpr
