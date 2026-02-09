@@ -61,6 +61,27 @@ TEST_CASE("MOD command", "[arithmetic]") {
     REQUIRE(ctx.repr_at(1) == "1");
 }
 
+TEST_CASE("Trailing-dot literal parses as Real", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2."));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "2.");
+}
+
+TEST_CASE("Real arithmetic preserves Real type", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2. 2 +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "4.");
+}
+
+TEST_CASE("Real with fractional part displays normally", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("3.14"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "3.14");
+}
+
 TEST_CASE("Mixed-type addition promotes to Real", "[arithmetic]") {
     auto ctx = make_ctx();
     REQUIRE(ctx.exec("1 2.5 +"));

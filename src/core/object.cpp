@@ -15,7 +15,11 @@ std::string repr(const Object& obj) {
         if constexpr (std::is_same_v<T, Integer>) {
             return v.str();
         } else if constexpr (std::is_same_v<T, Real>) {
-            return v.str();
+            std::string s = v.str();
+            if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
+                s += '.';
+            }
+            return s;
         } else if constexpr (std::is_same_v<T, Rational>) {
             return v.str();
         } else if constexpr (std::is_same_v<T, Complex>) {
