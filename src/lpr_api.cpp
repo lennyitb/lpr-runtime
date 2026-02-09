@@ -53,6 +53,14 @@ int lpr_redo(lpr_ctx* ctx) {
     return ctx->context.redo() ? 1 : 0;
 }
 
+lpr_state lpr_get_state(lpr_ctx* ctx) {
+    if (!ctx) return {0, 0};
+    auto& store = ctx->context.store();
+    int cur = store.current_undo_seq();
+    int max = store.history_max_seq();
+    return {cur / 2, (max - cur) / 2};
+}
+
 void lpr_free(void* ptr) {
     std::free(ptr);
 }
