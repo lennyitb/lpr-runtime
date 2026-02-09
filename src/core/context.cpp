@@ -101,13 +101,24 @@ void Context::execute_tokens(const std::vector<Token>& tokens) {
             if (commands_.has(tok.command)) {
                 commands_.execute(tok.command, store_, *this);
             } else {
-                // Try local variable resolution, then treat as unknown command
+                // Try local variable resolution first
                 auto local = resolve_local(tok.command);
                 if (local.has_value()) {
                     store_.push(*local);
                 } else {
-                    // Not a local — let the registry throw the error
-                    commands_.execute(tok.command, store_, *this);
+                    // Try recalling as a variable in current directory
+                    Object val = store_.recall_variable(store_.current_dir(), tok.command);
+                    if (!std::holds_alternative<Error>(val)) {
+                        // Found a variable — evaluate programs, push everything else
+                        if (std::holds_alternative<Program>(val)) {
+                            execute_tokens(std::get<Program>(val).tokens);
+                        } else {
+                            store_.push(val);
+                        }
+                    } else {
+                        // Not a local, not a variable — unknown command
+                        commands_.execute(tok.command, store_, *this);
+                    }
                 }
             }
         }

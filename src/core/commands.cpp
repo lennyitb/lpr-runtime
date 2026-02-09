@@ -83,6 +83,48 @@ Object binary_numeric(const Object& a, const Object& b,
     return Error{10, "Bad argument type"};
 }
 
+// Check if an object is symbolic (Name or Symbol)
+bool is_symbolic(const Object& obj) {
+    return std::holds_alternative<Name>(obj) || std::holds_alternative<Symbol>(obj);
+}
+
+// Convert an object to its expression string form for building symbolic expressions
+std::string to_expr_string(const Object& obj) {
+    if (std::holds_alternative<Name>(obj))   return std::get<Name>(obj).value;
+    if (std::holds_alternative<Symbol>(obj)) return std::get<Symbol>(obj).value;
+    return repr(obj);
+}
+
+// Determine if an expression string needs parentheses when used as an operand
+// of an operator with the given precedence
+bool needs_parens(const std::string& expr, int outer_prec) {
+    // Simple heuristic: if the expression contains +/- at the top level,
+    // it has precedence 1. Wrap it if outer operator has higher precedence.
+    int depth = 0;
+    int min_prec = 10;
+    for (char c : expr) {
+        if (c == '(') { ++depth; continue; }
+        if (c == ')') { --depth; continue; }
+        if (depth > 0) continue;
+        if (c == '+' || c == '-') min_prec = std::min(min_prec, 1);
+        if (c == '*' || c == '/') min_prec = std::min(min_prec, 2);
+    }
+    return min_prec < outer_prec;
+}
+
+// Build a symbolic expression from a binary operation
+Object symbolic_binary(const Object& a, const Object& b, const std::string& op) {
+    std::string sa = to_expr_string(a);
+    std::string sb = to_expr_string(b);
+
+    // Add parens based on operator precedence
+    int prec = (op == "+" || op == "-") ? 1 : 2;  // * and / are 2
+    if (needs_parens(sa, prec)) sa = "(" + sa + ")";
+    if (needs_parens(sb, prec)) sb = "(" + sb + ")";
+
+    return Symbol{sa + op + sb};
+}
+
 // Check if an object is "truthy" (non-zero numeric)
 bool is_truthy(const Object& obj) {
     if (std::holds_alternative<Integer>(obj))  return std::get<Integer>(obj) != 0;
@@ -171,6 +213,158 @@ void CommandRegistry::register_stack_commands() {
     register_command("CLEAR", [](Store& s, Context&) {
         s.clear_stack();
     });
+
+    // UNROT: reverse of ROT — move top to level 3
+    // ( a b c -- c a b )
+    register_command("UNROT", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object c = s.pop(); // level 1
+        Object b = s.pop(); // level 2
+        Object a = s.pop(); // level 3
+        s.push(c);
+        s.push(a);
+        s.push(b);
+    });
+
+    // DUP2: duplicate top two items
+    // ( a b -- a b a b )
+    register_command("DUP2", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object lv2 = s.peek(2);
+        Object lv1 = s.peek(1);
+        s.push(lv2);
+        s.push(lv1);
+    });
+
+    // DUPN: pop n, duplicate top n items
+    // ( ... x1..xn n -- ... x1..xn x1..xn )
+    register_command("DUPN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 0 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        // Collect items from top n levels (deepest first)
+        std::vector<Object> items;
+        for (int i = n; i >= 1; i--) {
+            items.push_back(s.peek(i));
+        }
+        // Push copies
+        for (auto& obj : items) {
+            s.push(obj);
+        }
+    });
+
+    // DROP2: drop top two items
+    // ( a b -- )
+    register_command("DROP2", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        s.pop();
+        s.pop();
+    });
+
+    // DROPN: pop n, drop top n items
+    // ( ... x1..xn n -- ... )
+    register_command("DROPN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 0 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        for (int i = 0; i < n; i++) {
+            s.pop();
+        }
+    });
+
+    // PICK: pop n, copy nth item to top
+    // ( ... xn ... x1 n -- ... xn ... x1 xn )
+    register_command("PICK", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        Object picked = s.peek(n);
+        s.push(picked);
+    });
+
+    // ROLL: pop n, roll nth item to top
+    // ( ... xn xn-1 ... x1 n -- ... xn-1 ... x1 xn )
+    register_command("ROLL", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        if (n == 1) return; // no-op
+        // Pop top n-1 items
+        std::vector<Object> saved;
+        for (int i = 0; i < n - 1; i++) {
+            saved.push_back(s.pop());
+        }
+        // Pop the target (nth item)
+        Object target = s.pop();
+        // Push back saved items in reverse order
+        for (int i = static_cast<int>(saved.size()) - 1; i >= 0; i--) {
+            s.push(saved[i]);
+        }
+        // Push target on top
+        s.push(target);
+    });
+
+    // ROLLD: pop n, roll top item down to nth position
+    // ( ... xn xn-1 ... x1 n -- ... x1 xn xn-1 ... x2 )
+    register_command("ROLLD", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        if (n == 1) return; // no-op
+        // Pop top item
+        Object top = s.pop();
+        // Pop remaining n-1 items
+        std::vector<Object> remaining;
+        for (int i = 0; i < n - 1; i++) {
+            remaining.push_back(s.pop());
+        }
+        // Push top first (goes to deepest position)
+        s.push(top);
+        // Push remaining back in reverse order
+        for (int i = static_cast<int>(remaining.size()) - 1; i >= 0; i--) {
+            s.push(remaining[i]);
+        }
+    });
+
+    // UNPICK: pop n, then pop obj, replace nth item with obj
+    // ( ... xn ... x1 obj n -- ... obj ... x1 )
+    register_command("UNPICK", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        Object obj = s.pop();
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        // Pop top n-1 items
+        std::vector<Object> saved;
+        for (int i = 0; i < n - 1; i++) {
+            saved.push_back(s.pop());
+        }
+        // Pop and discard the item at level n
+        s.pop();
+        // Push the replacement
+        s.push(obj);
+        // Push back saved items in reverse order
+        for (int i = static_cast<int>(saved.size()) - 1; i >= 0; i--) {
+            s.push(saved[i]);
+        }
+    });
 }
 
 // ---- Arithmetic Commands ----
@@ -181,6 +375,10 @@ void CommandRegistry::register_arithmetic_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop();
         Object a = s.pop();
+        if (is_symbolic(a) || is_symbolic(b)) {
+            s.push(symbolic_binary(a, b, "+"));
+            return;
+        }
         Object result = binary_numeric(a, b,
             [](const Integer& x, const Integer& y) -> Integer { return x + y; },
             [](const Rational& x, const Rational& y) -> Rational { return x + y; },
@@ -196,6 +394,10 @@ void CommandRegistry::register_arithmetic_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop(); // level 1
         Object a = s.pop(); // level 2
+        if (is_symbolic(a) || is_symbolic(b)) {
+            s.push(symbolic_binary(a, b, "-"));
+            return;
+        }
         Object result = binary_numeric(a, b,
             [](const Integer& x, const Integer& y) -> Integer { return x - y; },
             [](const Rational& x, const Rational& y) -> Rational { return x - y; },
@@ -211,6 +413,10 @@ void CommandRegistry::register_arithmetic_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop();
         Object a = s.pop();
+        if (is_symbolic(a) || is_symbolic(b)) {
+            s.push(symbolic_binary(a, b, "*"));
+            return;
+        }
         Object result = binary_numeric(a, b,
             [](const Integer& x, const Integer& y) -> Integer { return x * y; },
             [](const Rational& x, const Rational& y) -> Rational { return x * y; },
@@ -227,6 +433,11 @@ void CommandRegistry::register_arithmetic_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop(); // divisor (level 1)
         Object a = s.pop(); // dividend (level 2)
+
+        if (is_symbolic(a) || is_symbolic(b)) {
+            s.push(symbolic_binary(a, b, "/"));
+            return;
+        }
 
         // Check for division by zero
         if ((std::holds_alternative<Integer>(b) && std::get<Integer>(b) == 0) ||
@@ -255,6 +466,12 @@ void CommandRegistry::register_arithmetic_commands() {
     register_command("NEG", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) {
+            std::string sa = to_expr_string(a);
+            // Always wrap in parens for negation to be unambiguous
+            s.push(Symbol{"-("+sa+")"});
+            return;
+        }
         std::visit([&s](auto&& v) {
             using T = std::decay_t<decltype(v)>;
             if constexpr (std::is_same_v<T, Integer>) {

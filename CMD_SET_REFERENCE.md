@@ -11,10 +11,19 @@ All commands are **case-insensitive** (internally uppercased). Stack levels are 
 | Command | Stack Effect | Description |
 |---------|-------------|-------------|
 | `DUP`   | `( a -- a a )` | Duplicate the top item |
+| `DUP2`  | `( a b -- a b a b )` | Duplicate the top two items |
+| `DUPN`  | `( ...items n -- ...items ...items )` | Pop n, duplicate the top n items |
 | `DROP`  | `( a -- )` | Remove the top item |
+| `DROP2` | `( a b -- )` | Remove the top two items |
+| `DROPN` | `( ...items n -- )` | Pop n, remove the top n items |
 | `SWAP`  | `( a b -- b a )` | Swap the top two items |
 | `OVER`  | `( a b -- a b a )` | Copy the second item to the top |
 | `ROT`   | `( a b c -- b c a )` | Rotate the third item to the top |
+| `UNROT` | `( a b c -- c a b )` | Reverse rotate — move top to third position |
+| `PICK`  | `( ...items n -- ...items nth )` | Pop n, copy the nth item to the top |
+| `ROLL`  | `( ...items n -- ...rolled )` | Pop n, roll the nth item to the top |
+| `ROLLD` | `( ...items n -- ...rolled )` | Pop n, roll the top item down to the nth position |
+| `UNPICK`| `( ...items obj n -- ...modified )` | Pop n and obj, replace the nth item with obj |
 | `DEPTH` | `( -- n )` | Push the current stack depth as an Integer |
 | `CLEAR` | `( ... -- )` | Remove all items from the stack |
 
@@ -22,10 +31,21 @@ All commands are **case-insensitive** (internally uppercased). Stack levels are 
 
 ```
 5 DUP          => 5 5
+1 2 DUP2       => 1 2 1 2
+1 2 3 2 DUPN   => 1 2 3 2 3
 3 7 SWAP       => 7 3
 1 2 3 ROT      => 2 3 1
+1 2 3 UNROT    => 3 1 2
+1 2 3 3 PICK   => 1 2 3 1
+1 2 3 3 ROLL   => 2 3 1     (same as ROT)
+1 2 3 3 ROLLD  => 3 1 2     (same as UNROT)
+1 2 3 99 2 UNPICK  => 1 99 3
+1 2 3 DROP2    => 1
+1 2 3 4 3 DROPN => 1
 1 2 3 DEPTH    => 1 2 3 3
 ```
+
+**Parameterized commands** (`DUPN`, `DROPN`, `PICK`, `ROLL`, `ROLLD`, `UNPICK`) consume an Integer from level 1 to determine their operand count or position. A type error is thrown if level 1 is not an Integer. `PICK` with n=1 is equivalent to `DUP`; `ROLL` with n=3 is equivalent to `ROT`; `ROLLD` with n=3 is equivalent to `UNROT`.
 
 ---
 
@@ -310,38 +330,47 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | # | Command | Category | Args | Description |
 |---|---------|----------|------|-------------|
 | 1 | `DUP` | Stack | 1 | Duplicate top |
-| 2 | `DROP` | Stack | 1 | Remove top |
-| 3 | `SWAP` | Stack | 2 | Swap top two |
-| 4 | `OVER` | Stack | 2 | Copy second to top |
-| 5 | `ROT` | Stack | 3 | Rotate third to top |
-| 6 | `DEPTH` | Stack | 0 | Push stack depth |
-| 7 | `CLEAR` | Stack | 0 | Clear entire stack |
-| 8 | `+` | Arithmetic | 2 | Addition |
-| 9 | `-` | Arithmetic | 2 | Subtraction |
-| 10 | `*` | Arithmetic | 2 | Multiplication |
-| 11 | `/` | Arithmetic | 2 | Division |
-| 12 | `NEG` | Arithmetic | 1 | Negation |
-| 13 | `INV` | Arithmetic | 1 | Reciprocal |
-| 14 | `ABS` | Arithmetic | 1 | Absolute value |
-| 15 | `MOD` | Arithmetic | 2 | Modulo (Integer only) |
-| 16 | `==` | Comparison | 2 | Equal |
-| 17 | `!=` | Comparison | 2 | Not equal |
-| 18 | `<` | Comparison | 2 | Less than |
-| 19 | `>` | Comparison | 2 | Greater than |
-| 20 | `<=` | Comparison | 2 | Less or equal |
-| 21 | `>=` | Comparison | 2 | Greater or equal |
-| 22 | `TYPE` | Type | 1 | Type tag |
-| 23 | `->NUM` | Type | 1 | Convert to Real |
-| 24 | `->STR` | Type | 1 | Convert to String |
-| 25 | `STR->` | Type | 1 | Evaluate String as code |
-| 26 | `STO` | Filesystem | 2 | Store variable |
-| 27 | `RCL` | Filesystem | 1 | Recall variable |
-| 28 | `PURGE` | Filesystem | 1 | Delete variable |
-| 29 | `HOME` | Filesystem | 0 | Go to home directory |
-| 30 | `PATH` | Filesystem | 0 | Current directory path |
-| 31 | `CRDIR` | Filesystem | 1 | Create subdirectory |
-| 32 | `VARS` | Filesystem | 0 | List variables |
-| 33 | `EVAL` | Program | 1 | Evaluate object (program, name, or symbol expression) |
-| 34 | `IFT` | Program | 2 | Conditional (if-then) |
-| 35 | `IFTE` | Program | 3 | Conditional (if-then-else) |
-| 36 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |
+| 2 | `DUP2` | Stack | 2 | Duplicate top two |
+| 3 | `DUPN` | Stack | n+1 | Duplicate top n items |
+| 4 | `DROP` | Stack | 1 | Remove top |
+| 5 | `DROP2` | Stack | 2 | Remove top two |
+| 6 | `DROPN` | Stack | n+1 | Remove top n items |
+| 7 | `SWAP` | Stack | 2 | Swap top two |
+| 8 | `OVER` | Stack | 2 | Copy second to top |
+| 9 | `ROT` | Stack | 3 | Rotate third to top |
+| 10 | `UNROT` | Stack | 3 | Reverse rotate top to third |
+| 11 | `PICK` | Stack | n+1 | Copy nth item to top |
+| 12 | `ROLL` | Stack | n+1 | Roll nth item to top |
+| 13 | `ROLLD` | Stack | n+1 | Roll top down to nth position |
+| 14 | `UNPICK` | Stack | n+2 | Replace nth item with obj |
+| 15 | `DEPTH` | Stack | 0 | Push stack depth |
+| 16 | `CLEAR` | Stack | 0 | Clear entire stack |
+| 17 | `+` | Arithmetic | 2 | Addition |
+| 18 | `-` | Arithmetic | 2 | Subtraction |
+| 19 | `*` | Arithmetic | 2 | Multiplication |
+| 20 | `/` | Arithmetic | 2 | Division |
+| 21 | `NEG` | Arithmetic | 1 | Negation |
+| 22 | `INV` | Arithmetic | 1 | Reciprocal |
+| 23 | `ABS` | Arithmetic | 1 | Absolute value |
+| 24 | `MOD` | Arithmetic | 2 | Modulo (Integer only) |
+| 25 | `==` | Comparison | 2 | Equal |
+| 26 | `!=` | Comparison | 2 | Not equal |
+| 27 | `<` | Comparison | 2 | Less than |
+| 28 | `>` | Comparison | 2 | Greater than |
+| 29 | `<=` | Comparison | 2 | Less or equal |
+| 30 | `>=` | Comparison | 2 | Greater or equal |
+| 31 | `TYPE` | Type | 1 | Type tag |
+| 32 | `->NUM` | Type | 1 | Convert to Real |
+| 33 | `->STR` | Type | 1 | Convert to String |
+| 34 | `STR->` | Type | 1 | Evaluate String as code |
+| 35 | `STO` | Filesystem | 2 | Store variable |
+| 36 | `RCL` | Filesystem | 1 | Recall variable |
+| 37 | `PURGE` | Filesystem | 1 | Delete variable |
+| 38 | `HOME` | Filesystem | 0 | Go to home directory |
+| 39 | `PATH` | Filesystem | 0 | Current directory path |
+| 40 | `CRDIR` | Filesystem | 1 | Create subdirectory |
+| 41 | `VARS` | Filesystem | 0 | List variables |
+| 42 | `EVAL` | Program | 1 | Evaluate object (program, name, or symbol expression) |
+| 43 | `IFT` | Program | 2 | Conditional (if-then) |
+| 44 | `IFTE` | Program | 3 | Conditional (if-then-else) |
+| 45 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |

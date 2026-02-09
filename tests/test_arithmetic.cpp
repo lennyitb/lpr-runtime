@@ -96,3 +96,75 @@ TEST_CASE("Too few arguments produces error", "[arithmetic]") {
     REQUIRE_FALSE(ctx.exec("+"));
     REQUIRE(ctx.depth() >= 1); // Error on stack
 }
+
+// ---- Symbolic arithmetic ----
+
+TEST_CASE("Symbolic addition: two names", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A+B'");
+}
+
+TEST_CASE("Symbolic addition: name and number", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 3 +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A+3'");
+}
+
+TEST_CASE("Symbolic addition: number and name", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("3 'A' +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'3+A'");
+}
+
+TEST_CASE("Symbolic subtraction", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'X' 'Y' -"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'X-Y'");
+}
+
+TEST_CASE("Symbolic multiplication", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' *"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A*B'");
+}
+
+TEST_CASE("Symbolic division", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' /"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A/B'");
+}
+
+TEST_CASE("Symbolic NEG", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' NEG"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'-(A)'");
+}
+
+TEST_CASE("Symbolic precedence: (A+B)*C", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' + 'C' *"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'(A+B)*C'");
+}
+
+TEST_CASE("Symbolic precedence: A*B+C has no extra parens", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' * 'C' +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A*B+C'");
+}
+
+TEST_CASE("Symbolic chained: A+B+C", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'A' 'B' + 'C' +"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'A+B+C'");
+}

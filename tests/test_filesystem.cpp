@@ -54,3 +54,26 @@ TEST_CASE("VARS lists variables", "[filesystem]") {
     REQUIRE(vars.find("a") != std::string::npos);
     REQUIRE(vars.find("b") != std::string::npos);
 }
+
+// ---- Implicit variable recall (name fallthrough) ----
+
+TEST_CASE("Bare name recalls stored variable", "[filesystem]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("42 'X' STO"));
+    REQUIRE(ctx.exec("X"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "42");
+}
+
+TEST_CASE("Bare name executes stored program", "[filesystem]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("<< 1 2 + >> 'ADD3' STO"));
+    REQUIRE(ctx.exec("ADD3"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "3");
+}
+
+TEST_CASE("Bare unknown name still errors", "[filesystem]") {
+    Context ctx(nullptr);
+    REQUIRE_FALSE(ctx.exec("NOSUCHVAR"));
+}

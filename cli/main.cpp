@@ -32,6 +32,17 @@ int main(int argc, char* argv[]) {
 
         if (line == "q" || line == "quit") break;
 
+        if (line == "UNDO" || line == "undo") {
+            if (!lpr_undo(ctx)) std::cerr << "** Nothing to undo\n";
+            display_stack(ctx);
+            continue;
+        }
+        if (line == "REDO" || line == "redo") {
+            if (!lpr_redo(ctx)) std::cerr << "** Nothing to redo\n";
+            display_stack(ctx);
+            continue;
+        }
+
         lpr_result r = lpr_exec(ctx, line.c_str());
         if (!r.ok) {
             // The error is on the stack — display it distinctly
