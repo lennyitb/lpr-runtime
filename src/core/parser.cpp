@@ -57,6 +57,23 @@ bool starts_with_raquo(const std::string& s, size_t pos) {
            static_cast<unsigned char>(s[pos+1]) == 0xBB;
 }
 
+// ASCII helpers for << and >>
+bool starts_with_ascii_open(const std::string& s, size_t pos) {
+    return pos + 1 < s.size() && s[pos] == '<' && s[pos+1] == '<';
+}
+
+bool starts_with_ascii_close(const std::string& s, size_t pos) {
+    return pos + 1 < s.size() && s[pos] == '>' && s[pos+1] == '>';
+}
+
+bool starts_with_prog_open(const std::string& s, size_t pos) {
+    return starts_with_laquo(s, pos) || starts_with_ascii_open(s, pos);
+}
+
+bool starts_with_prog_close(const std::string& s, size_t pos) {
+    return starts_with_raquo(s, pos) || starts_with_ascii_close(s, pos);
+}
+
 } // anonymous namespace
 
 std::vector<Token> parse(const std::string& input) {
@@ -69,18 +86,18 @@ std::vector<Token> parse(const std::string& input) {
         while (i < len && is_whitespace(input[i])) ++i;
         if (i >= len) break;
 
-        // Program literal: « ... »
-        if (starts_with_laquo(input, i)) {
-            i += 2; // skip «
+        // Program literal: « ... » or << ... >>
+        if (starts_with_prog_open(input, i)) {
+            i += 2; // skip « or <<
             int nesting = 1;
             std::string body;
             while (i < len && nesting > 0) {
-                if (starts_with_laquo(input, i)) {
+                if (starts_with_prog_open(input, i)) {
                     body += input[i];
                     body += input[i+1];
                     i += 2;
                     nesting++;
-                } else if (starts_with_raquo(input, i)) {
+                } else if (starts_with_prog_close(input, i)) {
                     nesting--;
                     if (nesting > 0) {
                         body += input[i];
@@ -193,7 +210,7 @@ std::vector<Token> parse(const std::string& input) {
         // Bare word or number
         size_t start = i;
         while (i < len && !is_whitespace(input[i]) &&
-               !starts_with_laquo(input, i) && !starts_with_raquo(input, i)) {
+               !starts_with_prog_open(input, i) && !starts_with_prog_close(input, i)) {
             ++i;
         }
         std::string word = input.substr(start, i - start);
