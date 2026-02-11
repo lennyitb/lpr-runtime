@@ -10,7 +10,8 @@ Each milestone is roughly one spec-level unit of work.
 ### 1. Core Architecture & C API
 SQLite-backed runtime with transactional execution. Every `lpr_exec` call is
 an atomic SQLite transaction with automatic snapshot/rollback. The public API
-is 8 functions + 1 deallocator -- minimal surface for any host (iOS, WASM, CLI).
+is 9 functions + 1 deallocator -- minimal surface for any host (iOS, WASM,
+CLI). Includes `lpr_get_setting` for generic meta table access.
 
 ### 2. Object Type System
 Nine-type `std::variant`: Integer, Real, Rational, Complex, String, Program,
@@ -147,7 +148,7 @@ CI, not runtime code.
   VERSION (host-dependent, exposed through the C API)
 - **User-defined command registration** -- host applications registering
   custom commands via the C API
-- **Performance** -- command file splitting (commands.cpp is 800+ lines),
+- **Performance** -- command file splitting (commands.cpp is now 1500+ lines),
   object pooling, prepared statement caching, benchmarking harness
 - **OpenSpec spec promotion** -- archive completed changes and promote
   specs to `openspec/specs/` as canonical reference
