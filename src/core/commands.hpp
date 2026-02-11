@@ -30,6 +30,9 @@ private:
     void register_type_commands();
     void register_filesystem_commands();
     void register_program_commands();
+    void register_logic_commands();
+    void register_transcendental_commands();
+    void register_string_commands();
 };
 
 } // namespace lpr

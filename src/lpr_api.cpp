@@ -61,6 +61,17 @@ lpr_state lpr_get_state(lpr_ctx* ctx) {
     return {cur / 2, (max - cur) / 2};
 }
 
+char* lpr_get_setting(lpr_ctx* ctx, const char* key) {
+    if (!ctx || !key) return nullptr;
+    std::string val = ctx->context.store().get_meta(key, "");
+    if (val.empty()) return nullptr;
+    char* result = static_cast<char*>(std::malloc(val.size() + 1));
+    if (result) {
+        std::memcpy(result, val.c_str(), val.size() + 1);
+    }
+    return result;
+}
+
 void lpr_free(void* ptr) {
     std::free(ptr);
 }

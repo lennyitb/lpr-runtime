@@ -54,6 +54,10 @@ public:
     int  current_undo_seq();
     void set_undo_seq(int seq);
 
+    // Generic meta table access
+    std::string get_meta(const std::string& key, const std::string& default_val = "");
+    void set_meta(const std::string& key, const std::string& value);
+
 private:
     sqlite3* db_ = nullptr;
 

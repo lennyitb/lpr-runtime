@@ -24,6 +24,7 @@ char*      lpr_repr(lpr_ctx* ctx, int level);
 int        lpr_undo(lpr_ctx* ctx);
 int        lpr_redo(lpr_ctx* ctx);
 lpr_state  lpr_get_state(lpr_ctx* ctx);
+char*      lpr_get_setting(lpr_ctx* ctx, const char* key);
 void       lpr_free(void* ptr);
 
 #ifdef __cplusplus

@@ -283,6 +283,171 @@ The outer `->` binds X=2. The inner `->` binds X=5 in a new scope. The inner bod
 
 ---
 
+## Structured Control Flow
+
+Control flow structures are **runstream-consuming** — they consume tokens directly from the token stream at execution time, not from the stack. They nest naturally because collected bodies are re-executed via `execute_tokens`.
+
+| Construct | Syntax | Description |
+|-----------|--------|-------------|
+| `IF...THEN...END` | `IF cond THEN body END` | Execute body if cond is nonzero |
+| `IF...THEN...ELSE...END` | `IF cond THEN body1 ELSE body2 END` | Execute body1 if true, body2 if false |
+| `CASE...END` | `CASE test1 THEN body1 END ... END` | Multi-way branch; first true test wins |
+| `FOR...NEXT` | `start end FOR var body NEXT` | Counted loop with step +1, binds loop variable |
+| `FOR...STEP` | `start end FOR var body step STEP` | Counted loop with custom step (popped from stack) |
+| `START...NEXT` | `start end START body NEXT` | Counted loop without loop variable |
+| `START...STEP` | `start end START body step STEP` | Counted loop without variable, custom step |
+| `WHILE...REPEAT...END` | `WHILE cond REPEAT body END` | Pre-test loop |
+| `DO...UNTIL...END` | `DO body UNTIL cond END` | Post-test loop (executes at least once) |
+
+**Examples:**
+
+```
+IF 1 THEN 42 END                              => 42
+IF 0 THEN 10 ELSE 20 END                      => 20
+1 5 FOR I I NEXT                               => 1 2 3 4 5
+0 1 3 FOR I I + NEXT                           => 6
+5 WHILE DUP 0 > REPEAT 1 - END                => 0
+5 DO 1 - DUP 0 == UNTIL END                   => 0
+```
+
+---
+
+## Logic & Bitwise Operations
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `AND`   | `( a b -- flag )` | Boolean AND (integers; nonzero = true) |
+| `OR`    | `( a b -- flag )` | Boolean OR |
+| `NOT`   | `( a -- flag )` | Boolean NOT |
+| `XOR`   | `( a b -- flag )` | Boolean exclusive OR |
+| `BAND`  | `( a b -- n )` | Bitwise AND |
+| `BOR`   | `( a b -- n )` | Bitwise OR |
+| `BXOR`  | `( a b -- n )` | Bitwise XOR |
+| `BNOT`  | `( a -- n )` | Bitwise NOT (complement) |
+| `SL`    | `( a n -- result )` | Shift left by n bits |
+| `SR`    | `( a n -- result )` | Shift right by n bits |
+| `ASR`   | `( a n -- result )` | Arithmetic shift right (sign-extending) |
+| `SAME`  | `( a b -- flag )` | Deep structural equality (same type AND value) |
+
+All logic and bitwise commands require Integer arguments. `SAME` differs from `==`: `SAME` requires identical types (`1 1.0 SAME` → 0), while `==` promotes types (`1 1.0 ==` → 1).
+
+---
+
+## Transcendental & Scientific Functions
+
+### Angle Mode
+
+| Command | Description |
+|---------|-------------|
+| `DEG`   | Set angle mode to degrees |
+| `RAD`   | Set angle mode to radians (default) |
+| `GRAD`  | Set angle mode to gradians |
+
+Trig functions convert input/output according to the current angle mode.
+
+### Trigonometry
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SIN`   | `( x -- sin(x) )` | Sine |
+| `COS`   | `( x -- cos(x) )` | Cosine |
+| `TAN`   | `( x -- tan(x) )` | Tangent |
+| `ASIN`  | `( x -- asin(x) )` | Inverse sine |
+| `ACOS`  | `( x -- acos(x) )` | Inverse cosine |
+| `ATAN`  | `( x -- atan(x) )` | Inverse tangent |
+| `ATAN2` | `( y x -- atan2(y,x) )` | Two-argument inverse tangent |
+
+### Exponential & Logarithmic
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `EXP`   | `( x -- e^x )` | Natural exponential |
+| `LN`    | `( x -- ln(x) )` | Natural logarithm |
+| `LOG`   | `( x -- log10(x) )` | Common (base-10) logarithm |
+| `ALOG`  | `( x -- 10^x )` | Common antilogarithm |
+| `SQRT`  | `( x -- √x )` | Square root |
+| `SQ`    | `( x -- x² )` | Square |
+
+### Constants
+
+| Command | Description |
+|---------|-------------|
+| `PI`    | Push π (50-digit precision) |
+| `E`     | Push e (50-digit precision) |
+
+### Rounding
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `FLOOR` | `( x -- n )` | Floor (round toward -∞) |
+| `CEIL`  | `( x -- n )` | Ceiling (round toward +∞) |
+| `IP`    | `( x -- n )` | Integer part (truncate toward zero) |
+| `FP`    | `( x -- r )` | Fractional part |
+
+### Utility
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `MIN`   | `( a b -- min )` | Minimum of two values |
+| `MAX`   | `( a b -- max )` | Maximum of two values |
+| `SIGN`  | `( x -- s )` | Sign: -1, 0, or 1 |
+
+### Combinatorics
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `!`     | `( n -- n! )` | Factorial |
+| `COMB`  | `( n k -- C(n,k) )` | Combinations |
+| `PERM`  | `( n k -- P(n,k) )` | Permutations |
+
+### Percentage
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `%`     | `( base pct -- result )` | Percentage: base × pct / 100 |
+| `%T`    | `( total part -- pct )` | What percent is part of total |
+| `%CH`   | `( old new -- pct )` | Percent change from old to new |
+
+### Angle Conversion
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `D->R`  | `( deg -- rad )` | Degrees to radians |
+| `R->D`  | `( rad -- deg )` | Radians to degrees |
+
+---
+
+## String Manipulation
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SIZE`  | `( str -- n )` | Length of string |
+| `HEAD`  | `( str -- char )` | First character |
+| `TAIL`  | `( str -- rest )` | All but first character |
+| `SUB`   | `( str start end -- substr )` | 1-based substring |
+| `POS`   | `( str search -- pos )` | Find position (0 if not found) |
+| `REPL`  | `( str search repl -- result )` | Replace first occurrence |
+| `NUM`   | `( str -- codepoint )` | First char to ASCII codepoint |
+| `CHR`   | `( codepoint -- str )` | ASCII codepoint to character |
+
+The `+` command is overloaded: when both operands are Strings, it concatenates. Mixed String/numeric operands are an error.
+
+**Examples:**
+
+```
+"hello" SIZE                     => 5
+"hello" HEAD                     => "h"
+"hello" TAIL                     => "ello"
+"hello" 2 4 SUB                  => "ell"
+"hello world" "world" POS        => 7
+"hello world" "world" "there" REPL  => "hello there"
+"A" NUM                          => 65
+65 CHR                           => "A"
+"hello" " world" +               => "hello world"
+```
+
+---
+
 ## Data Types
 
 ### Numeric Types
@@ -374,3 +539,64 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 43 | `IFT` | Program | 2 | Conditional (if-then) |
 | 44 | `IFTE` | Program | 3 | Conditional (if-then-else) |
 | 45 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |
+| 46 | `IF...THEN...END` | Control Flow | *runstream* | Conditional execution |
+| 47 | `CASE...END` | Control Flow | *runstream* | Multi-way branch |
+| 48 | `FOR...NEXT` | Control Flow | 2 + *runstream* | Counted loop with variable |
+| 49 | `FOR...STEP` | Control Flow | 2 + *runstream* | Counted loop with variable and custom step |
+| 50 | `START...NEXT` | Control Flow | 2 + *runstream* | Counted loop |
+| 51 | `START...STEP` | Control Flow | 2 + *runstream* | Counted loop with custom step |
+| 52 | `WHILE...REPEAT...END` | Control Flow | *runstream* | Pre-test loop |
+| 53 | `DO...UNTIL...END` | Control Flow | *runstream* | Post-test loop |
+| 54 | `AND` | Logic | 2 | Boolean AND |
+| 55 | `OR` | Logic | 2 | Boolean OR |
+| 56 | `NOT` | Logic | 1 | Boolean NOT |
+| 57 | `XOR` | Logic | 2 | Boolean XOR |
+| 58 | `BAND` | Bitwise | 2 | Bitwise AND |
+| 59 | `BOR` | Bitwise | 2 | Bitwise OR |
+| 60 | `BXOR` | Bitwise | 2 | Bitwise XOR |
+| 61 | `BNOT` | Bitwise | 1 | Bitwise NOT |
+| 62 | `SL` | Bitwise | 2 | Shift left |
+| 63 | `SR` | Bitwise | 2 | Shift right |
+| 64 | `ASR` | Bitwise | 2 | Arithmetic shift right |
+| 65 | `SAME` | Logic | 2 | Deep structural equality |
+| 66 | `DEG` | Angle Mode | 0 | Set degrees mode |
+| 67 | `RAD` | Angle Mode | 0 | Set radians mode |
+| 68 | `GRAD` | Angle Mode | 0 | Set gradians mode |
+| 69 | `SIN` | Transcendental | 1 | Sine |
+| 70 | `COS` | Transcendental | 1 | Cosine |
+| 71 | `TAN` | Transcendental | 1 | Tangent |
+| 72 | `ASIN` | Transcendental | 1 | Inverse sine |
+| 73 | `ACOS` | Transcendental | 1 | Inverse cosine |
+| 74 | `ATAN` | Transcendental | 1 | Inverse tangent |
+| 75 | `ATAN2` | Transcendental | 2 | Two-argument inverse tangent |
+| 76 | `EXP` | Transcendental | 1 | Natural exponential |
+| 77 | `LN` | Transcendental | 1 | Natural logarithm |
+| 78 | `LOG` | Transcendental | 1 | Common logarithm |
+| 79 | `ALOG` | Transcendental | 1 | Common antilogarithm |
+| 80 | `SQRT` | Transcendental | 1 | Square root |
+| 81 | `SQ` | Transcendental | 1 | Square |
+| 82 | `PI` | Constant | 0 | Push π |
+| 83 | `E` | Constant | 0 | Push e |
+| 84 | `FLOOR` | Rounding | 1 | Floor |
+| 85 | `CEIL` | Rounding | 1 | Ceiling |
+| 86 | `IP` | Rounding | 1 | Integer part |
+| 87 | `FP` | Rounding | 1 | Fractional part |
+| 88 | `MIN` | Utility | 2 | Minimum |
+| 89 | `MAX` | Utility | 2 | Maximum |
+| 90 | `SIGN` | Utility | 1 | Sign |
+| 91 | `!` | Combinatorics | 1 | Factorial |
+| 92 | `COMB` | Combinatorics | 2 | Combinations |
+| 93 | `PERM` | Combinatorics | 2 | Permutations |
+| 94 | `%` | Percentage | 2 | Percentage |
+| 95 | `%T` | Percentage | 2 | Percent of total |
+| 96 | `%CH` | Percentage | 2 | Percent change |
+| 97 | `D->R` | Angle Conv | 1 | Degrees to radians |
+| 98 | `R->D` | Angle Conv | 1 | Radians to degrees |
+| 99 | `SIZE` | String | 1 | String length |
+| 100 | `HEAD` | String | 1 | First character |
+| 101 | `TAIL` | String | 1 | All but first character |
+| 102 | `SUB` | String | 3 | Substring |
+| 103 | `POS` | String | 2 | Find position |
+| 104 | `REPL` | String | 3 | Replace first occurrence |
+| 105 | `NUM` | String | 1 | Char to codepoint |
+| 106 | `CHR` | String | 1 | Codepoint to char |

@@ -25,6 +25,7 @@ bool is_real(const std::string& s) {
     if (s.empty()) return false;
     bool has_dot = false;
     bool has_e = false;
+    bool has_digit = false;
     size_t start = (s[0] == '-') ? 1 : 0;
     if (start >= s.size()) return false;
     for (size_t i = start; i < s.size(); ++i) {
@@ -33,15 +34,17 @@ bool is_real(const std::string& s) {
             if (has_dot || has_e) return false;
             has_dot = true;
         } else if (c == 'E' || c == 'e') {
-            if (has_e) return false;
+            if (has_e || !has_digit) return false; // require digits before E
             has_e = true;
             // Allow optional sign after E
             if (i + 1 < s.size() && (s[i+1] == '+' || s[i+1] == '-')) ++i;
         } else if (!std::isdigit(static_cast<unsigned char>(c))) {
             return false;
+        } else {
+            has_digit = true;
         }
     }
-    return has_dot || has_e;
+    return has_digit && (has_dot || has_e);
 }
 
 // UTF-8 helpers for « (0xC2 0xAB) and » (0xC2 0xBB)

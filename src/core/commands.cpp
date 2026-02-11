@@ -137,6 +137,21 @@ bool is_truthy(const Object& obj) {
     return false;
 }
 
+// Extract a Real from a numeric Object (Integer, Rational, or Real)
+Real to_real_value(const Object& obj) {
+    if (std::holds_alternative<Integer>(obj)) return Real(std::get<Integer>(obj));
+    if (std::holds_alternative<Rational>(obj)) return Real(std::get<Rational>(obj));
+    if (std::holds_alternative<Real>(obj)) return std::get<Real>(obj);
+    throw std::runtime_error("Bad argument type");
+}
+
+double to_double_value(const Object& obj) {
+    if (std::holds_alternative<Integer>(obj)) return std::get<Integer>(obj).convert_to<double>();
+    if (std::holds_alternative<Rational>(obj)) return std::get<Rational>(obj).convert_to<double>();
+    if (std::holds_alternative<Real>(obj)) return std::get<Real>(obj).convert_to<double>();
+    throw std::runtime_error("Bad argument type");
+}
+
 } // anonymous namespace
 
 // ---- Command Registry ----
@@ -148,6 +163,9 @@ CommandRegistry::CommandRegistry() {
     register_type_commands();
     register_filesystem_commands();
     register_program_commands();
+    register_logic_commands();
+    register_transcendental_commands();
+    register_string_commands();
 }
 
 void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
@@ -375,6 +393,15 @@ void CommandRegistry::register_arithmetic_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop();
         Object a = s.pop();
+        // String concatenation
+        if (std::holds_alternative<String>(a) && std::holds_alternative<String>(b)) {
+            s.push(String{std::get<String>(a).value + std::get<String>(b).value});
+            return;
+        }
+        if (std::holds_alternative<String>(a) || std::holds_alternative<String>(b)) {
+            s.push(a); s.push(b);
+            throw std::runtime_error("Bad argument type");
+        }
         if (is_symbolic(a) || is_symbolic(b)) {
             s.push(symbolic_binary(a, b, "+"));
             return;
@@ -808,6 +835,617 @@ void CommandRegistry::register_program_commands() {
         } else {
             s.push(chosen);
         }
+    });
+}
+
+// ---- Logic & Bitwise Commands ----
+
+void CommandRegistry::register_logic_commands() {
+    // Boolean logic (on integers: 0 = false, nonzero = true, result is 0 or 1)
+    register_command("AND", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        bool ba = std::get<Integer>(a) != 0;
+        bool bb = std::get<Integer>(b) != 0;
+        s.push(Integer(ba && bb ? 1 : 0));
+    });
+
+    register_command("OR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        bool ba = std::get<Integer>(a) != 0;
+        bool bb = std::get<Integer>(b) != 0;
+        s.push(Integer(ba || bb ? 1 : 0));
+    });
+
+    register_command("NOT", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(std::get<Integer>(a) == 0 ? 1 : 0));
+    });
+
+    register_command("XOR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        bool ba = std::get<Integer>(a) != 0;
+        bool bb = std::get<Integer>(b) != 0;
+        s.push(Integer(ba != bb ? 1 : 0));
+    });
+
+    // Bitwise operations (on integers)
+    register_command("BAND", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(std::get<Integer>(a) & std::get<Integer>(b)));
+    });
+
+    register_command("BOR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(std::get<Integer>(a) | std::get<Integer>(b)));
+    });
+
+    register_command("BXOR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(std::get<Integer>(a) ^ std::get<Integer>(b)));
+    });
+
+    register_command("BNOT", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(~std::get<Integer>(a)));
+    });
+
+    register_command("SL", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        auto shift = static_cast<int>(std::get<Integer>(b));
+        s.push(Integer(std::get<Integer>(a) << shift));
+    });
+
+    register_command("SR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        auto shift = static_cast<int>(std::get<Integer>(b));
+        s.push(Integer(std::get<Integer>(a) >> shift));
+    });
+
+    register_command("ASR", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a) || !std::holds_alternative<Integer>(b))
+            throw std::runtime_error("Bad argument type");
+        // Arithmetic shift right is the same as >> for cpp_int (sign-extending)
+        auto shift = static_cast<int>(std::get<Integer>(b));
+        s.push(Integer(std::get<Integer>(a) >> shift));
+    });
+
+    // SAME: deep structural equality (same type AND same value)
+    register_command("SAME", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        bool same = false;
+        if (a.index() == b.index()) {
+            // Same variant index — compare values
+            std::visit([&same, &b](auto&& va) {
+                using T = std::decay_t<decltype(va)>;
+                auto& vb = std::get<T>(b);
+                if constexpr (std::is_same_v<T, Integer> || std::is_same_v<T, Real> ||
+                              std::is_same_v<T, Rational>) {
+                    same = (va == vb);
+                } else if constexpr (std::is_same_v<T, Complex>) {
+                    same = (va.first == vb.first && va.second == vb.second);
+                } else if constexpr (std::is_same_v<T, String>) {
+                    same = (va.value == vb.value);
+                } else if constexpr (std::is_same_v<T, Name>) {
+                    same = (va.value == vb.value);
+                } else if constexpr (std::is_same_v<T, Symbol>) {
+                    same = (va.value == vb.value);
+                } else if constexpr (std::is_same_v<T, Error>) {
+                    same = (va.code == vb.code && va.message == vb.message);
+                } else if constexpr (std::is_same_v<T, Program>) {
+                    // Programs are same if their repr matches
+                    same = (repr(Object(va)) == repr(Object(vb)));
+                }
+            }, a);
+        }
+        s.push(Integer(same ? 1 : 0));
+    });
+}
+
+// ---- Transcendental & Scientific Commands ----
+
+void CommandRegistry::register_transcendental_commands() {
+    // Angle mode commands
+    register_command("DEG", [](Store& s, Context&) {
+        s.set_meta("angle_mode", "DEG");
+    });
+    register_command("RAD", [](Store& s, Context&) {
+        s.set_meta("angle_mode", "RAD");
+    });
+    register_command("GRAD", [](Store& s, Context&) {
+        s.set_meta("angle_mode", "GRAD");
+    });
+
+    // Helper lambdas for angle conversion
+    // to_radians: convert from current angle mode to radians
+    auto to_rad = [](const Real& val, Store& s) -> double {
+        std::string mode = s.get_meta("angle_mode", "RAD");
+        double v = val.convert_to<double>();
+        if (mode == "DEG") return v * 3.14159265358979323846 / 180.0;
+        if (mode == "GRAD") return v * 3.14159265358979323846 / 200.0;
+        return v; // RAD
+    };
+    // from_radians: convert radians to current angle mode
+    auto from_rad = [](double val, Store& s) -> Real {
+        std::string mode = s.get_meta("angle_mode", "RAD");
+        if (mode == "DEG") return Real(val * 180.0 / 3.14159265358979323846);
+        if (mode == "GRAD") return Real(val * 200.0 / 3.14159265358979323846);
+        return Real(val);
+    };
+
+    // Trig functions (angle-mode-aware)
+    register_command("SIN", [to_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(std::sin(to_rad(to_real_value(a), s))));
+    });
+
+    register_command("COS", [to_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(std::cos(to_rad(to_real_value(a), s))));
+    });
+
+    register_command("TAN", [to_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(std::tan(to_rad(to_real_value(a), s))));
+    });
+
+    register_command("ASIN", [from_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(from_rad(std::asin(to_double_value(a)), s));
+    });
+
+    register_command("ACOS", [from_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(from_rad(std::acos(to_double_value(a)), s));
+    });
+
+    register_command("ATAN", [from_rad](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(from_rad(std::atan(to_double_value(a)), s));
+    });
+
+    register_command("ATAN2", [from_rad](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop(); // x
+        Object a = s.pop(); // y
+        s.push(from_rad(std::atan2(to_double_value(a), to_double_value(b)), s));
+    });
+
+    // Exponential / logarithmic
+    register_command("EXP", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(std::exp(to_double_value(a))));
+    });
+
+    register_command("LN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        double v = to_double_value(a);
+        if (v <= 0) throw std::runtime_error("Bad argument value");
+        s.push(Real(std::log(v)));
+    });
+
+    register_command("LOG", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        double v = to_double_value(a);
+        if (v <= 0) throw std::runtime_error("Bad argument value");
+        s.push(Real(std::log10(v)));
+    });
+
+    register_command("ALOG", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(std::pow(10.0, to_double_value(a))));
+    });
+
+    // SQRT, SQ
+    register_command("SQRT", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            auto& v = std::get<Integer>(a);
+            if (v < 0) throw std::runtime_error("Bad argument value");
+            s.push(Real(std::sqrt(v.convert_to<double>())));
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            if (v < 0) throw std::runtime_error("Bad argument value");
+            s.push(Real(boost::multiprecision::sqrt(v)));
+        } else if (std::holds_alternative<Rational>(a)) {
+            auto& v = std::get<Rational>(a);
+            if (v < 0) throw std::runtime_error("Bad argument value");
+            s.push(Real(std::sqrt(v.convert_to<double>())));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    register_command("SQ", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        Object result = binary_numeric(a, a,
+            [](const Integer& x, const Integer& y) -> Integer { return x * y; },
+            [](const Rational& x, const Rational& y) -> Rational { return x * y; },
+            [](const Real& x, const Real& y) -> Real { return x * y; },
+            [](const Complex& x, const Complex& y) -> Complex {
+                return {x.first * y.first - x.second * y.second,
+                        x.first * y.second + x.second * y.first};
+            });
+        s.push(result);
+    });
+
+    // Constants
+    register_command("PI", [](Store& s, Context&) {
+        s.push(Real("3.14159265358979323846264338327950288419716939937510"));
+    });
+
+    register_command("E", [](Store& s, Context&) {
+        s.push(Real("2.71828182845904523536028747135266249775724709369995"));
+    });
+
+    // Rounding
+    register_command("FLOOR", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            s.push(a);
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            s.push(Integer(static_cast<long long>(boost::multiprecision::floor(v))));
+        } else if (std::holds_alternative<Rational>(a)) {
+            Real r(std::get<Rational>(a));
+            s.push(Integer(static_cast<long long>(boost::multiprecision::floor(r))));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    register_command("CEIL", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            s.push(a);
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            s.push(Integer(static_cast<long long>(boost::multiprecision::ceil(v))));
+        } else if (std::holds_alternative<Rational>(a)) {
+            Real r(std::get<Rational>(a));
+            s.push(Integer(static_cast<long long>(boost::multiprecision::ceil(r))));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    register_command("IP", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            s.push(a);
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            s.push(Integer(static_cast<long long>(boost::multiprecision::trunc(v))));
+        } else if (std::holds_alternative<Rational>(a)) {
+            Real r(std::get<Rational>(a));
+            s.push(Integer(static_cast<long long>(boost::multiprecision::trunc(r))));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    register_command("FP", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            s.push(Real(0));
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            Real ip = boost::multiprecision::trunc(v);
+            s.push(Real(v - ip));
+        } else if (std::holds_alternative<Rational>(a)) {
+            Real r(std::get<Rational>(a));
+            Real ip = boost::multiprecision::trunc(r);
+            s.push(Real(r - ip));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // MIN, MAX, SIGN
+    register_command("MIN", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        Object result = binary_numeric(a, b,
+            [](const Integer& x, const Integer& y) -> Integer { return x < y ? x : y; },
+            [](const Rational& x, const Rational& y) -> Rational { return x < y ? x : y; },
+            [](const Real& x, const Real& y) -> Real { return x < y ? x : y; },
+            [](const Complex&, const Complex&) -> Complex {
+                throw std::runtime_error("Bad argument type");
+            });
+        s.push(result);
+    });
+
+    register_command("MAX", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        Object result = binary_numeric(a, b,
+            [](const Integer& x, const Integer& y) -> Integer { return x > y ? x : y; },
+            [](const Rational& x, const Rational& y) -> Rational { return x > y ? x : y; },
+            [](const Real& x, const Real& y) -> Real { return x > y ? x : y; },
+            [](const Complex&, const Complex&) -> Complex {
+                throw std::runtime_error("Bad argument type");
+            });
+        s.push(result);
+    });
+
+    register_command("SIGN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<Integer>(a)) {
+            auto& v = std::get<Integer>(a);
+            s.push(Integer(v > 0 ? 1 : (v < 0 ? -1 : 0)));
+        } else if (std::holds_alternative<Real>(a)) {
+            auto& v = std::get<Real>(a);
+            s.push(Integer(v > 0 ? 1 : (v < 0 ? -1 : 0)));
+        } else if (std::holds_alternative<Rational>(a)) {
+            auto& v = std::get<Rational>(a);
+            s.push(Integer(v > 0 ? 1 : (v < 0 ? -1 : 0)));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // Combinatorics
+    // Factorial (!)
+    register_command("!", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a))
+            throw std::runtime_error("Bad argument type");
+        auto n = std::get<Integer>(a);
+        if (n < 0) throw std::runtime_error("Bad argument value");
+        Integer result = 1;
+        for (Integer i = 2; i <= n; ++i) result *= i;
+        s.push(result);
+    });
+
+    // COMB(n, k) = n! / (k! * (n-k)!)
+    register_command("COMB", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object k_obj = s.pop();
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj) || !std::holds_alternative<Integer>(k_obj))
+            throw std::runtime_error("Bad argument type");
+        auto n = std::get<Integer>(n_obj);
+        auto k = std::get<Integer>(k_obj);
+        if (n < 0 || k < 0 || k > n) throw std::runtime_error("Bad argument value");
+        // Use iterative approach to avoid overflow
+        if (k > n - k) k = n - k;
+        Integer result = 1;
+        for (Integer i = 0; i < k; ++i) {
+            result = result * (n - i) / (i + 1);
+        }
+        s.push(result);
+    });
+
+    // PERM(n, k) = n! / (n-k)!
+    register_command("PERM", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object k_obj = s.pop();
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj) || !std::holds_alternative<Integer>(k_obj))
+            throw std::runtime_error("Bad argument type");
+        auto n = std::get<Integer>(n_obj);
+        auto k = std::get<Integer>(k_obj);
+        if (n < 0 || k < 0 || k > n) throw std::runtime_error("Bad argument value");
+        Integer result = 1;
+        for (Integer i = 0; i < k; ++i) {
+            result *= (n - i);
+        }
+        s.push(result);
+    });
+
+    // Percentage commands
+    register_command("%", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        s.push(Real(to_double_value(a) * to_double_value(b) / 100.0));
+    });
+
+    register_command("%T", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        double total = to_double_value(a);
+        if (total == 0) throw std::runtime_error("Division by zero");
+        s.push(Real(to_double_value(b) / total * 100.0));
+    });
+
+    register_command("%CH", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        double old_val = to_double_value(a);
+        if (old_val == 0) throw std::runtime_error("Division by zero");
+        s.push(Real((to_double_value(b) - old_val) / old_val * 100.0));
+    });
+
+    // Angle conversion
+    auto d2r_fn = [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(to_double_value(a) * 3.14159265358979323846 / 180.0));
+    };
+    register_command("D->R", d2r_fn);
+    register_command("D" "\xe2\x86\x92" "R", d2r_fn);
+
+    auto r2d_fn = [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        s.push(Real(to_double_value(a) * 180.0 / 3.14159265358979323846));
+    };
+    register_command("R->D", r2d_fn);
+    register_command("R" "\xe2\x86\x92" "D", r2d_fn);
+}
+
+// ---- String Manipulation Commands ----
+
+void CommandRegistry::register_string_commands() {
+    register_command("SIZE", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<String>(a))
+            throw std::runtime_error("Bad argument type");
+        s.push(Integer(static_cast<int>(std::get<String>(a).value.size())));
+    });
+
+    register_command("HEAD", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<String>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& str = std::get<String>(a).value;
+        if (str.empty()) throw std::runtime_error("Bad argument value");
+        s.push(String{str.substr(0, 1)});
+    });
+
+    register_command("TAIL", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<String>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& str = std::get<String>(a).value;
+        if (str.empty()) throw std::runtime_error("Bad argument value");
+        s.push(String{str.substr(1)});
+    });
+
+    // SUB: 1-based substring (string start end -- substring)
+    register_command("SUB", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object end_obj = s.pop();
+        Object start_obj = s.pop();
+        Object str_obj = s.pop();
+        if (!std::holds_alternative<String>(str_obj) ||
+            !std::holds_alternative<Integer>(start_obj) ||
+            !std::holds_alternative<Integer>(end_obj))
+            throw std::runtime_error("Bad argument type");
+        auto& str = std::get<String>(str_obj).value;
+        int start = static_cast<int>(std::get<Integer>(start_obj));
+        int end = static_cast<int>(std::get<Integer>(end_obj));
+        if (start < 1) start = 1;
+        if (end > static_cast<int>(str.size())) end = static_cast<int>(str.size());
+        if (start > end) {
+            s.push(String{""});
+        } else {
+            s.push(String{str.substr(start - 1, end - start + 1)});
+        }
+    });
+
+    // POS: find substring (string search -- position), 0 if not found
+    register_command("POS", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object search_obj = s.pop();
+        Object str_obj = s.pop();
+        if (!std::holds_alternative<String>(str_obj) ||
+            !std::holds_alternative<String>(search_obj))
+            throw std::runtime_error("Bad argument type");
+        auto& str = std::get<String>(str_obj).value;
+        auto& search = std::get<String>(search_obj).value;
+        auto pos = str.find(search);
+        s.push(Integer(pos == std::string::npos ? 0 : static_cast<int>(pos) + 1));
+    });
+
+    // REPL: replace first occurrence (string search replace -- result)
+    register_command("REPL", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object repl_obj = s.pop();
+        Object search_obj = s.pop();
+        Object str_obj = s.pop();
+        if (!std::holds_alternative<String>(str_obj) ||
+            !std::holds_alternative<String>(search_obj) ||
+            !std::holds_alternative<String>(repl_obj))
+            throw std::runtime_error("Bad argument type");
+        std::string result = std::get<String>(str_obj).value;
+        auto& search = std::get<String>(search_obj).value;
+        auto& repl = std::get<String>(repl_obj).value;
+        auto pos = result.find(search);
+        if (pos != std::string::npos) {
+            result.replace(pos, search.size(), repl);
+        }
+        s.push(String{result});
+    });
+
+    // NUM: first char -> codepoint
+    register_command("NUM", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<String>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& str = std::get<String>(a).value;
+        if (str.empty()) throw std::runtime_error("Bad argument value");
+        s.push(Integer(static_cast<unsigned char>(str[0])));
+    });
+
+    // CHR: codepoint -> char
+    register_command("CHR", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(a))
+            throw std::runtime_error("Bad argument type");
+        int cp = static_cast<int>(std::get<Integer>(a));
+        if (cp < 0 || cp > 127) throw std::runtime_error("Bad argument value");
+        s.push(String{std::string(1, static_cast<char>(cp))});
     });
 }
 

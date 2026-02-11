@@ -58,34 +58,39 @@ Full undo/redo via SQLite stack snapshots. ~133 Catch2 test cases across 10
 files covering types, stack ops, parsing, arithmetic, undo, filesystem,
 programs, locals, arrow binding, and expression evaluation.
 
+### 11. Structured Control Flow (8 constructs)
+All six HP 50g structured control flow constructs implemented as runstream-
+consuming handlers in `execute_tokens`: `IF...THEN...END`,
+`IF...THEN...ELSE...END`, `CASE...THEN...END`, `FOR...NEXT`, `FOR...STEP`,
+`START...NEXT`, `START...STEP`, `WHILE...REPEAT...END`, `DO...UNTIL...END`.
+Smart nesting tracker distinguishes FOR/START (closed by NEXT/STEP) from
+IF/CASE/WHILE/DO (closed by END). 24 test cases.
+
+### 12. Logic & Bitwise Operations (12 commands)
+Boolean: AND, OR, NOT, XOR (on integers; nonzero = true). Bitwise: BAND,
+BOR, BXOR, BNOT, SL, SR, ASR (on integers). SAME for deep structural
+equality (same type AND value, unlike `==` which promotes). 20 test cases.
+
+### 13. Transcendental & Scientific Functions (~30 commands)
+Angle mode: DEG, RAD, GRAD (stored in SQLite `meta` table, default RAD).
+Trig: SIN, COS, TAN, ASIN, ACOS, ATAN, ATAN2 (angle-mode-aware). Exp/log:
+EXP, LN, LOG, ALOG, SQRT, SQ. Constants: PI, E (50-digit precision).
+Rounding: FLOOR, CEIL, IP, FP. Utility: MIN, MAX, SIGN. Combinatorics:
+COMB, PERM, ! (factorial). Percentage: %, %T, %CH. Angle conversion: D->R,
+R->D. Generic `Store::get_meta`/`set_meta` helpers for the meta table.
+C API: `lpr_get_setting()` for reading any meta key. 50 test cases.
+
+### 14. String Manipulation (8 commands + overload)
+SIZE, HEAD, TAIL, SUB (1-based substring), POS (find), REPL (replace first
+occurrence), NUM (char to codepoint), CHR (codepoint to char). `+` overloaded
+for String concatenation (mixed String/numeric is an error). 20 test cases.
+
+Test suite now at **281 test cases, 721 assertions** across 14 files.
+Runtime command count: **~106 commands** (up from 45).
+
 ---
 
 ## In Progress / Next Up
-
-### 11. Structured Control Flow
-`IF ... THEN ... ELSE ... END`, `CASE ... THEN ... END`, `FOR ... NEXT/STEP`,
-`START ... NEXT/STEP`, `WHILE ... REPEAT ... END`, `DO ... UNTIL ... END`.
-This is the single biggest gap for writing real RPL programs. Requires the
-parser and evaluator to handle multi-token control structures consumed from
-the runstream (similar to how `->` works, but with nesting and branching).
-
-### 12. Logic & Bitwise Operations
-AND, OR, NOT, XOR (Boolean on integers). BAND, BOR, BXOR, BNOT, SL, SR, ASR
-(bitwise on integers). SAME (deep structural equality across all types).
-Small surface area, high utility -- unlocks conditional logic in programs.
-
-### 13. Transcendental & Scientific Functions
-SIN, COS, TAN, ASIN, ACOS, ATAN, ATAN2, EXP, LN, LOG, ALOG, SQRT, SQ.
-Constants PI and E. Rounding: FLOOR, CEIL, IP, FP. Utility: MIN, MAX, SIGN.
-Combinatorics: COMB, PERM, ! (factorial). Percentage: %, %T, %CH.
-Angle/time conversion: D->R, R->D, HMS->, ->HMS. All operate on the full
-numeric tower; complex-valued trig follows standard branch cuts.
-
-### 14. String Manipulation
-SIZE (length), SUB (substring), POS (find), REPL (replace), HEAD, TAIL.
-NUM (char -> codepoint), CHR (codepoint -> char). Overload `+` for string
-concatenation. These are the building blocks for any metaprogramming or
-text-processing RPL programs.
 
 ### 15. List Type & Operations
 New `List` variant member holding `std::vector<Object>`. Parser support for
@@ -116,10 +121,11 @@ variables), TVARS (typed variable listing). The SQLite directory tree schema
 already supports hierarchy -- this is wiring up the traversal commands.
 
 ### 19. Display Modes, Flags & Settings
-Number formatting: FIX, SCI, ENG, STD. Angle modes: DEG, RAD, GRAD.
-Coordinate modes: RECT, POLAR, SPHERICAL. System flags: SF, CF, FS?, FC?,
-STOF, RCLF. ->Q (convert to rational approximation). These affect repr
-output and trig function behavior. Stored in the SQLite `meta` table.
+Number formatting: FIX, SCI, ENG, STD. Coordinate modes: RECT, POLAR,
+SPHERICAL. System flags: SF, CF, FS?, FC?, STOF, RCLF. ->Q (convert to
+rational approximation). HMS time conversion: HMS->, ->HMS. These affect
+repr output and command behavior. Stored in the SQLite `meta` table.
+(Angle modes DEG/RAD/GRAD already implemented in milestone 13.)
 
 ### 20. Cross-Platform Targets & Packaging
 iOS framework build target (CMake + Xcode). WASM via Emscripten for

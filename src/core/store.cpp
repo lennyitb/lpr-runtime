@@ -402,4 +402,28 @@ void Store::set_current_dir(int dir_id) {
     sqlite3_finalize(stmt);
 }
 
+// --- Generic meta access ---
+
+std::string Store::get_meta(const std::string& key, const std::string& default_val) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT value FROM meta WHERE key = ?", -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    std::string result = default_val;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (val) result = val;
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void Store::set_meta(const std::string& key, const std::string& value) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 } // namespace lpr
