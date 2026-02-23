@@ -9,12 +9,13 @@ RPL programs need a way to inspect and modify symbolic expressions structurally.
 - Add **STASH** and **STASHN** commands to hide stack items on a hidden auxiliary stack (LIFO)
 - Add **UNSTASH** command to restore items from the hidden stack
 - Add **ASSEMBLE** command to reconstruct expressions via repeated unstash + EVAL
-- Add **symbolic handling to existing unary commands** (SQ, SQRT, SIN, COS, etc.) so they produce symbolic output from symbolic input — prerequisite for ASSEMBLE
+- Add **symbolic handling to existing commands** (unary: SQ, SQRT, SIN, etc.; multi-arg: IFTE, IFT) so they produce symbolic output from symbolic input — prerequisite for ASSEMBLE
+- Add **comma-separated argument syntax** to expression tokenizer for `FUNC(a, b, c)` style calls in Symbols
 - Add **stash table** to SQLite schema for persistence and undo/redo consistency
 
 ## Impact
 - Affected specs: new capability `symbolic-manipulation`
 - Affected code:
-  - `commands.cpp` — new commands + symbolic unary handling for ~13 existing commands
+  - `commands.cpp` — new commands + symbolic handling for ~15 existing commands
   - `store.hpp/cpp` — stash table and methods
   - `expression.hpp/cpp` — expose `tokenize_expression()` and `precedence()` for EXPLODE

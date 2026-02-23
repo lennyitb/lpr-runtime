@@ -1,12 +1,14 @@
-## 1. Symbolic unary function support (prerequisite)
-- [ ] 1.1 Add `symbolic_unary()` helper in commands.cpp that produces `Symbol{"FUNC(expr)"}` from a symbolic input
-- [ ] 1.2 Add `is_symbolic` guard to SQ, SQRT, SIN, COS, TAN, ASIN, ACOS, ATAN, EXP, LN, ABS, NEG, INV
-- [ ] 1.3 Tests: symbolic input produces correct Symbol output; numeric inputs unchanged
+## 1. Symbolic function support (prerequisite)
+- [ ] 1.1 Add `symbolic_func()` helper in commands.cpp that produces `Symbol{"FUNC(a, b, ...)"}` for any arity
+- [ ] 1.2 Add `is_symbolic` guard to unary commands: SQ, SQRT, SIN, COS, TAN, ASIN, ACOS, ATAN, EXP, LN, ABS, NEG, INV
+- [ ] 1.3 Add symbolic handling to multi-arg commands: IFTE (3 args), IFT (2 args)
+- [ ] 1.4 Tests: symbolic input produces correct Symbol output; numeric inputs unchanged; multi-arg symbolic output
 
-## 2. SUBST command
-- [ ] 2.1 Expose `tokenize_expression()` and `ExprToken` types in expression.hpp
-- [ ] 2.2 Implement SUBST: tokenize, replace matching Name tokens, parenthesize compound replacements via `needs_parens()`, reconstruct string
-- [ ] 2.3 Tests: simple substitution, expression replacement with parens, no-match, multiple occurrences
+## 2. Comma syntax and SUBST command
+- [ ] 2.1 Add Comma token type to expression tokenizer
+- [ ] 2.2 Expose `tokenize_expression()`, `ExprToken` types, and `needs_parens()` in expression.hpp
+- [ ] 2.3 Implement SUBST: tokenize, replace matching Name tokens, parenthesize compound replacements, reconstruct string
+- [ ] 2.4 Tests: simple substitution, expression replacement with parens, no-match, multiple occurrences, expressions containing commas
 
 ## 3. Stash infrastructure
 - [ ] 3.1 Add `stash` table to SQLite schema (`group_id`, `pos`, `object_id`)
@@ -22,9 +24,9 @@
 
 ## 5. EXPLODE command
 - [ ] 5.1 Expose `precedence()` in expression.hpp (or implement top-level operator finder internally)
-- [ ] 5.2 Implement EXPLODE: tokenize expression, find lowest-precedence operator at paren depth 0, extract operands and operator; handle function-call pattern `NAME(args)`
+- [ ] 5.2 Implement EXPLODE: tokenize expression, find lowest-precedence operator at paren depth 0, extract operands and operator; handle function-call pattern `NAME(args)` including comma-separated multi-arg calls
 - [ ] 5.3 Push operands as appropriate types (Integer for numeric literals, Name for variables, Symbol for sub-expressions), operator as single-token Program
-- [ ] 5.4 Tests: binary ops, unary functions, nested expressions, atomic expression error
+- [ ] 5.4 Tests: binary ops, unary functions, multi-arg functions, nested expressions, atomic expression error
 
 ## 6. ASSEMBLE command
 - [ ] 6.1 Implement ASSEMBLE: loop while stash non-empty — UNSTASH then EVAL level 1

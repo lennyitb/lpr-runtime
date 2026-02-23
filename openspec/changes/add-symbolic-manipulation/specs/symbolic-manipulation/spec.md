@@ -35,7 +35,7 @@ The system SHALL provide an EXPLODE command that decomposes a symbolic expressio
 
 The operator SHALL be pushed as a single-token Program (e.g., `« + »` or `« SQ »`) suitable for EVAL-based reassembly.
 
-For binary operations (`+`, `-`, `*`, `/`, `^`): the left operand is pushed first, then the right operand, then the operator Program. For function application (e.g., `SQ(X)`): arguments are pushed first, then the function Program.
+For binary operations (`+`, `-`, `*`, `/`, `^`): the left operand is pushed first, then the right operand, then the operator Program. For function application (e.g., `SQ(X)` or `IFTE(a, b, c)`): arguments are pushed left-to-right, then the function Program.
 
 Numeric literals within the expression SHALL be pushed as their native numeric type (Integer, Real). Variable names SHALL be pushed as Names. Sub-expressions SHALL be pushed as Symbols.
 
@@ -50,6 +50,10 @@ Numeric literals within the expression SHALL be pushed as their native numeric t
 #### Scenario: Nested expression preserves sub-expressions
 - **WHEN** the stack contains `'SQ(X)+3'` and EXPLODE is executed
 - **THEN** the stack SHALL contain level 3: Symbol `'SQ(X)'`, level 2: Integer `3`, level 1: Program `« + »`
+
+#### Scenario: Multi-argument function
+- **WHEN** the stack contains `'IFTE(A>0, A, -A)'` and EXPLODE is executed
+- **THEN** the stack SHALL contain level 4: Symbol `'A>0'`, level 3: Name `A`, level 2: Symbol `'-A'`, level 1: Program `« IFTE »`
 
 #### Scenario: Atomic expression raises error
 - **WHEN** the stack contains a Symbol with a single variable name (e.g., `'X'`) and EXPLODE is executed
@@ -116,12 +120,14 @@ Each cycle performs: UNSTASH, then EVAL. The EVAL executes the operator Program,
 - **WHEN** the stash is empty and ASSEMBLE is executed
 - **THEN** the stack SHALL remain unchanged
 
-### Requirement: Symbolic Unary Function Handling
-Existing unary function commands SHALL produce symbolic results when given a symbolic input (Name or Symbol), instead of raising a type error.
+### Requirement: Symbolic Function Handling
+Existing function commands SHALL produce symbolic results when any argument is symbolic (Name or Symbol), instead of raising a type error.
 
-The symbolic result SHALL be a Symbol of the form `FUNC(expr)` where FUNC is the uppercase command name and expr is the expression string of the input.
+For unary functions, the symbolic result SHALL be `Symbol{"FUNC(expr)"}`. For multi-argument functions, the result SHALL be `Symbol{"FUNC(expr1, expr2, ...)"} ` with comma-separated arguments.
 
-Commands that SHALL support symbolic inputs: SQ, SQRT, SIN, COS, TAN, ASIN, ACOS, ATAN, EXP, LN, ABS, NEG, INV.
+Unary commands that SHALL support symbolic inputs: SQ, SQRT, SIN, COS, TAN, ASIN, ACOS, ATAN, EXP, LN, ABS, NEG, INV.
+
+Multi-argument commands that SHALL support symbolic inputs: IFTE (3 args), IFT (2 args).
 
 #### Scenario: SQ with symbolic input
 - **WHEN** the stack contains Name `X` and SQ is executed
@@ -131,6 +137,20 @@ Commands that SHALL support symbolic inputs: SQ, SQRT, SIN, COS, TAN, ASIN, ACOS
 - **WHEN** the stack contains Symbol `'X+1'` and SIN is executed
 - **THEN** the stack SHALL contain Symbol `'SIN(X+1)'`
 
+#### Scenario: IFTE with symbolic inputs
+- **WHEN** the stack contains Symbol `'A>0'` at level 3, Name `A` at level 2, Symbol `'-A'` at level 1
+- **AND** IFTE is executed
+- **THEN** the stack SHALL contain Symbol `'IFTE(A>0, A, -A)'`
+
 #### Scenario: Numeric inputs still produce numeric results
 - **WHEN** the stack contains Integer `5` and SQ is executed
 - **THEN** the stack SHALL contain Integer `25` (unchanged behavior)
+
+### Requirement: Comma-Separated Argument Syntax
+The expression tokenizer SHALL support commas as argument separators within function calls. The syntax `FUNC(arg1, arg2, ..., argN)` SHALL be valid within Symbol strings.
+
+Commas SHALL only be meaningful inside parenthesized function-call argument lists, not at the top level of an expression.
+
+#### Scenario: Tokenizer handles commas
+- **WHEN** the expression `'IFTE(X>0, X, -X)'` is tokenized
+- **THEN** the tokenizer SHALL produce Name, LParen, Name, Op, Number, Comma, Name, Comma, Op, Name, RParen tokens

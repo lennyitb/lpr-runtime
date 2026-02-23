@@ -2,8 +2,8 @@
 Adding structural expression manipulation to the RPL runtime. The core challenge is decomposing/reconstructing expressions that are stored as infix strings (Symbol type), not ASTs.
 
 ## Goals / Non-Goals
-- Goals: SUBST, EXPLODE, STASH/STASHN/UNSTASH, ASSEMBLE commands; symbolic unary function support
-- Non-Goals: full CAS simplification, pattern matching, multi-argument function decomposition (e.g., IFTE)
+- Goals: SUBST, EXPLODE, STASH/STASHN/UNSTASH, ASSEMBLE commands; symbolic function support (unary and multi-arg); comma-separated argument syntax in expressions
+- Non-Goals: full CAS simplification, pattern matching
 
 ## Decisions
 
@@ -27,9 +27,13 @@ Adding structural expression manipulation to the RPL runtime. The core challenge
 - Decision: EXPLODE pushes only operands + operator, no count. The arity is evident from context (binary ops push 3 items, unary functions push 2). This keeps the common `EXPLODE ... STASHN` workflow clean.
 - Alternatives: Push count like HP 50g's OBJ→ (adds ceremony: `1 - STASHN` every time to stash everything but the target operand).
 
+### Multi-argument function syntax
+- Decision: Add Comma token to `tokenize_expression()`. Expressions support `FUNC(arg1, arg2, ..., argN)` syntax. EXPLODE decomposes into N args + function Program. A `symbolic_func()` helper builds `Symbol{"FUNC(a, b, c)"}` for any arity.
+- Alternatives: Only support unary functions in expressions (artificially limits the syntax when the implementation cost of commas is trivial).
+
 ## Risks / Trade-offs
-- Symbolic unary support touches ~13 existing commands — risk of regression. Mitigated by: each function gets a simple `if (is_symbolic(a))` guard at the top, existing numeric paths unchanged.
-- ASSEMBLE assumes each unstash+EVAL cycle produces exactly one stack item. This holds for all standard unary/binary operations but would break for hypothetical commands with non-standard arity.
+- Symbolic support touches ~13+ existing commands — risk of regression. Mitigated by: each function gets a simple `if (is_symbolic(a))` guard at the top, existing numeric paths unchanged.
+- ASSEMBLE assumes each unstash+EVAL cycle produces exactly one stack item. This holds for all standard operations but would break for commands with non-standard arity.
 
 ## Open Questions
 - Should EXPLODE handle unary negation (e.g., `'-X'` → `'X'`, `« NEG »`)? Leaning yes for completeness.
