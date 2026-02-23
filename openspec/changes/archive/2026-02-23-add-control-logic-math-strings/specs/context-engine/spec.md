@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Token Execution
 The `execute_tokens` method SHALL iterate through a token stream, pushing literals, dispatching commands, and handling runstream-consuming constructs. Runstream-consuming constructs include `->` (local variable binding) and the structured control flow keywords: `IF`, `CASE`, `FOR`, `START`, `WHILE`, `DO`. When a control flow keyword is encountered, `execute_tokens` SHALL consume the corresponding tokens from the runstream according to the construct's grammar, execute conditional/loop bodies via recursive calls to `execute_tokens`, and advance the token index past the closing `END`/`NEXT`/`STEP`.
