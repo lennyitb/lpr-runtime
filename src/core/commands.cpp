@@ -607,6 +607,90 @@ void CommandRegistry::register_arithmetic_commands() {
             throw std::runtime_error("Bad argument type");
         }
     });
+
+    // ^ (power)
+    register_command("^", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop(); // exponent (level 1)
+        Object a = s.pop(); // base (level 2)
+
+        if (is_symbolic(a) || is_symbolic(b)) {
+            s.push(symbolic_binary(a, b, "^"));
+            return;
+        }
+
+        // Helper: extract integer exponent from any exact numeric type
+        auto get_int_exp = [](const Object& obj, bool& ok) -> long long {
+            ok = false;
+            if (std::holds_alternative<Integer>(obj)) {
+                auto& v = std::get<Integer>(obj);
+                if (v >= -1000000 && v <= 1000000) {
+                    ok = true;
+                    return v.convert_to<long long>();
+                }
+            } else if (std::holds_alternative<Rational>(obj)) {
+                auto& v = std::get<Rational>(obj);
+                if (boost::multiprecision::denominator(v) == 1) {
+                    auto num = boost::multiprecision::numerator(v);
+                    if (num >= -1000000 && num <= 1000000) {
+                        ok = true;
+                        return num.convert_to<long long>();
+                    }
+                }
+            }
+            return 0;
+        };
+
+        bool has_int_exp = false;
+        long long iexp = get_int_exp(b, has_int_exp);
+
+        if (std::holds_alternative<Integer>(a) && has_int_exp) {
+            auto& base = std::get<Integer>(a);
+            if (iexp >= 0) {
+                s.push(Integer(boost::multiprecision::pow(base, static_cast<unsigned>(iexp))));
+            } else {
+                Integer denom(boost::multiprecision::pow(base, static_cast<unsigned>(-iexp)));
+                if (denom == 0) throw std::runtime_error("Division by zero");
+                s.push(Rational(Integer(1), denom));
+            }
+        } else if (std::holds_alternative<Rational>(a) && has_int_exp) {
+            auto& base = std::get<Rational>(a);
+            Integer num = boost::multiprecision::numerator(base);
+            Integer den = boost::multiprecision::denominator(base);
+            if (iexp >= 0) {
+                auto n = static_cast<unsigned>(iexp);
+                s.push(Rational(Integer(boost::multiprecision::pow(num, n)),
+                                Integer(boost::multiprecision::pow(den, n))));
+            } else {
+                auto n = static_cast<unsigned>(-iexp);
+                Integer new_num(boost::multiprecision::pow(den, n));
+                Integer new_den(boost::multiprecision::pow(num, n));
+                if (new_den == 0) throw std::runtime_error("Division by zero");
+                s.push(Rational(new_num, new_den));
+            }
+        } else {
+            // Promote to Real
+            Real rbase, rexp;
+            if (std::holds_alternative<Integer>(a))
+                rbase = Real(std::get<Integer>(a));
+            else if (std::holds_alternative<Rational>(a))
+                rbase = Real(std::get<Rational>(a));
+            else if (std::holds_alternative<Real>(a))
+                rbase = std::get<Real>(a);
+            else { s.push(a); s.push(b); throw std::runtime_error("Bad argument type"); }
+
+            if (std::holds_alternative<Integer>(b))
+                rexp = Real(std::get<Integer>(b));
+            else if (std::holds_alternative<Rational>(b))
+                rexp = Real(std::get<Rational>(b));
+            else if (std::holds_alternative<Real>(b))
+                rexp = std::get<Real>(b);
+            else { s.push(a); s.push(b); throw std::runtime_error("Bad argument type"); }
+
+            if (rbase < 0) throw std::runtime_error("Bad argument value");
+            s.push(Real(boost::multiprecision::pow(rbase, rexp)));
+        }
+    });
 }
 
 // ---- Comparison Commands ----
@@ -802,7 +886,8 @@ void CommandRegistry::register_program_commands() {
             auto& name = std::get<Name>(a).value;
             Object val = s.recall_variable(s.current_dir(), name);
             if (std::holds_alternative<Error>(val)) {
-                throw std::runtime_error("Undefined Name");
+                s.push(Name{name});
+                return;
             }
             if (std::holds_alternative<Program>(val)) {
                 ctx.execute_tokens(std::get<Program>(val).tokens);
@@ -1119,7 +1204,12 @@ void CommandRegistry::register_transcendental_commands() {
         if (std::holds_alternative<Integer>(a)) {
             auto& v = std::get<Integer>(a);
             if (v < 0) throw std::runtime_error("Bad argument value");
-            s.push(Real(std::sqrt(v.convert_to<double>())));
+            Integer isqrt = boost::multiprecision::sqrt(v);
+            if (isqrt * isqrt == v) {
+                s.push(isqrt);
+            } else {
+                s.push(Real(boost::multiprecision::sqrt(Real(v))));
+            }
         } else if (std::holds_alternative<Real>(a)) {
             auto& v = std::get<Real>(a);
             if (v < 0) throw std::runtime_error("Bad argument value");
@@ -1127,7 +1217,15 @@ void CommandRegistry::register_transcendental_commands() {
         } else if (std::holds_alternative<Rational>(a)) {
             auto& v = std::get<Rational>(a);
             if (v < 0) throw std::runtime_error("Bad argument value");
-            s.push(Real(std::sqrt(v.convert_to<double>())));
+            Integer num = boost::multiprecision::numerator(v);
+            Integer den = boost::multiprecision::denominator(v);
+            Integer isqrt_num = boost::multiprecision::sqrt(num);
+            Integer isqrt_den = boost::multiprecision::sqrt(den);
+            if (isqrt_num * isqrt_num == num && isqrt_den * isqrt_den == den) {
+                s.push(Rational(isqrt_num, isqrt_den));
+            } else {
+                s.push(Real(boost::multiprecision::sqrt(Real(v))));
+            }
         } else {
             throw std::runtime_error("Bad argument type");
         }
@@ -1136,7 +1234,7 @@ void CommandRegistry::register_transcendental_commands() {
     register_command("SQ", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
-        if (is_symbolic(a)) { s.push(symbolic_func("SQ", {a})); return; }
+        if (is_symbolic(a)) { s.push(symbolic_binary(a, Integer(2), "^")); return; }
         Object result = binary_numeric(a, a,
             [](const Integer& x, const Integer& y) -> Integer { return x * y; },
             [](const Rational& x, const Rational& y) -> Rational { return x * y; },
@@ -1571,7 +1669,7 @@ void CommandRegistry::register_symbolic_commands() {
 
     // EXPLODE: decompose a Symbol's top-level operation into operands + operator
     // ( 'expr' -- operand1 [operand2 ...] « operator » )
-    register_command("EXPLODE", [](Store& s, Context&) {
+    register_command("EXPLODE", [](Store& s, Context& ctx) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object obj = s.pop();
         if (!std::holds_alternative<Symbol>(obj))
@@ -1619,11 +1717,7 @@ void CommandRegistry::register_symbolic_commands() {
                     if (!std::isdigit(static_cast<unsigned char>(c))) { is_number = false; break; }
                 }
                 if (is_number && !arg.empty() && arg != "-") {
-                    if (has_dot) {
-                        s.push(Real(arg));
-                    } else {
-                        s.push(Integer(arg));
-                    }
+                    s.push(Symbol{arg});
                 } else {
                     // Check if it's a simple name (no operators)
                     auto arg_tokens = tokenize_expression(arg);
@@ -1677,9 +1771,6 @@ void CommandRegistry::register_symbolic_commands() {
                 auto operand_tokens = tokenize_expression(operand_str);
                 if (operand_tokens.size() == 1 && operand_tokens[0].type == ExprTokenType::Name) {
                     s.push(Name{operand_tokens[0].value});
-                } else if (operand_tokens.size() == 1 && operand_tokens[0].type == ExprTokenType::Number) {
-                    bool has_dot = operand_str.find('.') != std::string::npos;
-                    s.push(has_dot ? Object(Real(operand_str)) : Object(Integer(operand_str)));
                 } else {
                     s.push(Symbol{operand_str});
                 }
@@ -1687,19 +1778,17 @@ void CommandRegistry::register_symbolic_commands() {
                 return;
             }
 
-            // Atomic expression or fully-parenthesized — check if outer parens can be stripped
+            // Atomic expression or fully-parenthesized — strip outer parens and re-explode
             if (tokens.size() >= 2 &&
                 tokens[0].type == ExprTokenType::LParen &&
                 tokens.back().type == ExprTokenType::RParen) {
-                // Strip outer parens and retry
                 std::string inner;
                 for (size_t i = 1; i + 1 < tokens.size(); ++i) {
                     inner += tokens[i].value;
                 }
                 s.push(Symbol{inner});
-                // Re-invoke EXPLODE
-                // Actually, just throw back to avoid recursion in the command implementation
-                // Instead, we'll re-tokenize and check again — but for simplicity, throw
+                ctx.execute_tokens({Token::make_command("EXPLODE")});
+                return;
             }
 
             throw std::runtime_error("Cannot EXPLODE atomic expression");
@@ -1714,14 +1803,7 @@ void CommandRegistry::register_symbolic_commands() {
         // Push left operand
         auto push_operand = [&s](const std::string& str) {
             auto toks = tokenize_expression(str);
-            if (toks.size() == 1 && toks[0].type == ExprTokenType::Number) {
-                bool has_dot = str.find('.') != std::string::npos;
-                if (has_dot) {
-                    s.push(Real(str));
-                } else {
-                    s.push(Integer(str));
-                }
-            } else if (toks.size() == 1 && toks[0].type == ExprTokenType::Name) {
+            if (toks.size() == 1 && toks[0].type == ExprTokenType::Name) {
                 s.push(Name{toks[0].value});
             } else {
                 s.push(Symbol{str});

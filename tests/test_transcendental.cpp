@@ -155,10 +155,40 @@ TEST_CASE("LN of negative fails", "[transcendental]") {
 
 // --- SQRT, SQ ---
 
-TEST_CASE("SQRT 16 = 4", "[transcendental]") {
+TEST_CASE("SQRT 16 = 4 (exact Integer)", "[transcendental]") {
     auto ctx = make_ctx();
     REQUIRE(ctx.exec("16 SQRT"));
-    REQUIRE_THAT(top_as_double(ctx), Catch::Matchers::WithinAbs(4.0, 1e-10));
+    REQUIRE(ctx.repr_at(1) == "4");
+}
+
+TEST_CASE("SQRT 2 returns Real", "[transcendental]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 SQRT"));
+    REQUIRE_THAT(top_as_double(ctx), Catch::Matchers::WithinAbs(std::sqrt(2.0), 1e-10));
+}
+
+TEST_CASE("SQRT 9/4 = 3/2 (exact Rational)", "[transcendental]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("9 4 / SQRT"));
+    REQUIRE(ctx.repr_at(1) == "3/2");
+}
+
+TEST_CASE("SQRT 2/3 returns Real", "[transcendental]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 3 / SQRT"));
+    REQUIRE_THAT(top_as_double(ctx), Catch::Matchers::WithinAbs(std::sqrt(2.0 / 3.0), 1e-10));
+}
+
+TEST_CASE("SQRT 0 = 0 (exact)", "[transcendental]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("0 SQRT"));
+    REQUIRE(ctx.repr_at(1) == "0");
+}
+
+TEST_CASE("SQRT 1 = 1 (exact)", "[transcendental]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("1 SQRT"));
+    REQUIRE(ctx.repr_at(1) == "1");
 }
 
 TEST_CASE("SQ 7 = 49", "[transcendental]") {
@@ -319,10 +349,10 @@ TEST_CASE("SIN works with integer input", "[transcendental]") {
     REQUIRE_THAT(top_as_double(ctx), Catch::Matchers::WithinAbs(0.0, 1e-10));
 }
 
-TEST_CASE("SQRT works with integer input", "[transcendental]") {
+TEST_CASE("SQRT works with integer input (exact)", "[transcendental]") {
     auto ctx = make_ctx();
     REQUIRE(ctx.exec("4 SQRT"));
-    REQUIRE_THAT(top_as_double(ctx), Catch::Matchers::WithinAbs(2.0, 1e-10));
+    REQUIRE(ctx.repr_at(1) == "2");
 }
 
 // --- GRAD mode ---

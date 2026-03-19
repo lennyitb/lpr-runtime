@@ -1,4 +1,2 @@
-- sqrt always returns real
-- is there a way to convert back to exact
-- no ^ command
-- SQ doesn't work on expressions
+- add a way to convert reals back to exacts if possible
+- exact mode flag (like 50g flag -3): commands produce symbolic output even for numeric args

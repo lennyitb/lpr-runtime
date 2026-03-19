@@ -16,7 +16,7 @@ TEST_CASE("SQ of Symbol produces symbolic output", "[symbolic]") {
     auto ctx = make_ctx();
     REQUIRE(ctx.exec("'X' SQ"));
     REQUIRE(ctx.depth() == 1);
-    REQUIRE(ctx.repr_at(1) == "'SQ(X)'");
+    REQUIRE(ctx.repr_at(1) == "'X^2'");
 }
 
 TEST_CASE("SQRT of Symbol produces symbolic output", "[symbolic]") {
@@ -284,7 +284,7 @@ TEST_CASE("EXPLODE binary op: X*Y-3", "[symbolic][explode]") {
     REQUIRE(ctx.exec("'X*Y-3' EXPLODE"));
     REQUIRE(ctx.depth() == 3);
     REQUIRE(ctx.repr_at(3) == "'X*Y'");
-    REQUIRE(ctx.repr_at(2) == "3");
+    REQUIRE(ctx.repr_at(2) == "'3'");
     REQUIRE(ctx.repr_at(1) == "« - »");
 }
 
@@ -311,7 +311,7 @@ TEST_CASE("EXPLODE nested expression", "[symbolic][explode]") {
     REQUIRE(ctx.exec("'SQ(X)+3' EXPLODE"));
     REQUIRE(ctx.depth() == 3);
     REQUIRE(ctx.repr_at(3) == "'SQ(X)'");
-    REQUIRE(ctx.repr_at(2) == "3");
+    REQUIRE(ctx.repr_at(2) == "'3'");
     REQUIRE(ctx.repr_at(1) == "« + »");
 }
 
@@ -353,9 +353,9 @@ TEST_CASE("ASSEMBLE multi-level reassembly", "[symbolic][assemble]") {
     REQUIRE(ctx.exec("EXPLODE"));              // 'X' << SQ >>
     REQUIRE(ctx.exec("STASH"));                // stash << SQ >>
     REQUIRE(ctx.exec("DROP 'Y'"));             // replace X with Y
-    REQUIRE(ctx.exec("ASSEMBLE"));             // unstash << SQ >> -> SQ(Y), then unstash [3, << + >>] -> SQ(Y)+3
+    REQUIRE(ctx.exec("ASSEMBLE"));             // unstash << SQ >> -> Y^2, then unstash [3, << + >>] -> Y^2+3
     REQUIRE(ctx.depth() == 1);
-    REQUIRE(ctx.repr_at(1) == "'SQ(Y)+3'");
+    REQUIRE(ctx.repr_at(1) == "'Y^2+3'");
 }
 
 // ============================================================
@@ -378,8 +378,8 @@ TEST_CASE("E2E: SQ(X)+3 -> EXPLODE -> STASHN -> EXPLODE -> STASH -> DROP -> ASSE
     REQUIRE(ctx.exec("'Y+1'"));
     // Stack: 'Y+1'
     REQUIRE(ctx.exec("ASSEMBLE"));
-    // First unstash: << SQ >> -> SQ(Y+1)
-    // Second unstash: 3 << + >> -> SQ(Y+1)+3
+    // First unstash: << SQ >> -> (Y+1)^2
+    // Second unstash: 3 << + >> -> (Y+1)^2+3
     REQUIRE(ctx.depth() == 1);
-    REQUIRE(ctx.repr_at(1) == "'SQ(Y+1)+3'");
+    REQUIRE(ctx.repr_at(1) == "'(Y+1)^2+3'");
 }

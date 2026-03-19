@@ -168,3 +168,60 @@ TEST_CASE("Symbolic chained: A+B+C", "[arithmetic][symbolic]") {
     REQUIRE(ctx.depth() == 1);
     REQUIRE(ctx.repr_at(1) == "'A+B+C'");
 }
+
+// --- Power (^) ---
+
+TEST_CASE("Integer power: 2^10 = 1024", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 10 ^"));
+    REQUIRE(ctx.repr_at(1) == "1024");
+}
+
+TEST_CASE("Integer power: 2^0 = 1", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 0 ^"));
+    REQUIRE(ctx.repr_at(1) == "1");
+}
+
+TEST_CASE("Integer negative power: 2^-3 = 1/8", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 -3 ^"));
+    REQUIRE(ctx.repr_at(1) == "1/8");
+}
+
+TEST_CASE("Rational power: (2/3)^3 = 8/27", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 3 / 3 ^"));
+    REQUIRE(ctx.repr_at(1) == "8/27");
+}
+
+TEST_CASE("Rational negative power: (2/3)^-2 = 9/4", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 3 / -2 ^"));
+    REQUIRE(ctx.repr_at(1) == "9/4");
+}
+
+TEST_CASE("Real power: 2.0^0.5", "[arithmetic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2.0 0.5 ^"));
+    REQUIRE(ctx.depth() == 1);
+    // Should be approximately sqrt(2)
+}
+
+TEST_CASE("Symbolic power: 'X'^2", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'X' 2 ^"));
+    REQUIRE(ctx.repr_at(1) == "'X^2'");
+}
+
+TEST_CASE("Symbolic power: 2^'N'", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("2 'N' ^"));
+    REQUIRE(ctx.repr_at(1) == "'2^N'");
+}
+
+TEST_CASE("Symbolic power with expression base: (X+1)^3", "[arithmetic][symbolic]") {
+    auto ctx = make_ctx();
+    REQUIRE(ctx.exec("'X+1' 3 ^"));
+    REQUIRE(ctx.repr_at(1) == "'(X+1)^3'");
+}

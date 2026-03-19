@@ -27,6 +27,13 @@ TEST_CASE("EVAL recalls name", "[programs]") {
     REQUIRE(ctx.repr_at(1) == "42");
 }
 
+TEST_CASE("EVAL undefined name is no-op", "[programs]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("'X' EVAL"));
+    REQUIRE(ctx.depth() == 1);
+    REQUIRE(ctx.repr_at(1) == "'X'");
+}
+
 TEST_CASE("IFT true condition", "[programs]") {
     Context ctx(nullptr);
     REQUIRE(ctx.exec("\xC2\xAB \"yes\" \xC2\xBB 1 IFT"));

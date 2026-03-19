@@ -63,10 +63,13 @@ All arithmetic commands perform **automatic type promotion** through the numeric
 | `INV`   | `( a -- 1/a )` | Reciprocal |
 | `ABS`   | `( a -- |a| )` | Absolute value (magnitude for Complex) |
 | `MOD`   | `( a b -- a%b )` | Integer modulo |
+| `^`     | `( a b -- a^b )` | Power / exponentiation |
 
 **Division behavior:** Integer division produces a Rational result (e.g. `355 113 /` yields `355/113`), preserving exactness. Division by zero throws an error and restores the stack.
 
-**MOD** only operates on Integers. All other arithmetic commands work across the full numeric tower.
+**MOD** only operates on Integers.
+
+**Power (`^`)** preserves exact types when the exponent is an integer: `Integer ^ positive-int` yields Integer, `Integer ^ negative-int` yields Rational, `Rational ^ int` yields Rational. Non-integer exponents promote to Real. Exponents are capped at 1,000,000 to prevent resource exhaustion.
 
 **Complex multiplication** uses the standard formula `(a+bi)(c+di) = (ac-bd) + (ad+bc)i`. Complex division uses conjugate multiplication.
 
@@ -81,6 +84,9 @@ All arithmetic commands perform **automatic type promotion** through the numeric
 4 INV          => 1/4
 -7 ABS         => 7
 10 3 MOD       => 1
+2 10 ^         => 1024
+2 -3 ^         => 1/8
+2 3 / 3 ^      => 8/27         (Rational base, integer exponent)
 1 2.5 +        => 3.5          (Integer promoted to Real)
 ```
 
@@ -191,7 +197,7 @@ PATH             => "HOME"
 ### EVAL
 
 - **Program**: executes the program's tokens
-- **Name**: recalls the variable; if it contains a Program, executes it
+- **Name**: recalls the variable; if it contains a Program, executes it; if undefined, pushes the Name back unchanged
 - **Symbol**: parses the infix expression, substitutes variables (locals then globals), and pushes the numeric result
 - **Other types**: pushes the object back unchanged
 
@@ -454,13 +460,16 @@ Commands for inspecting, decomposing, and reconstructing symbolic expressions. T
 
 ### Symbolic Pass-Through
 
-When a symbolic operand (Name or Symbol) is passed to a unary math command, the command produces a Symbol wrapping the function call instead of evaluating numerically. This allows building symbolic expressions compositionally.
+When a symbolic operand (Name or Symbol) is passed to a math command, the command produces a Symbol wrapping the operation instead of evaluating numerically. This allows building symbolic expressions compositionally.
 
-**Commands with symbolic pass-through:** `SQ`, `SQRT`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `EXP`, `LN`, `ABS`, `NEG`, `INV`, `IFT`, `IFTE`
+**Commands with symbolic pass-through:** `+`, `-`, `*`, `/`, `^`, `SQ`, `SQRT`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `EXP`, `LN`, `ABS`, `NEG`, `INV`, `IFT`, `IFTE`
 
 ```
-'X' SQ           => 'SQ(X)'
+'X' SQ           => 'X^2'
+'X+1' SQ         => '(X+1)^2'
+'X' 2 ^          => 'X^2'
 'A+B' SQRT       => 'SQRT(A+B)'
+'X' 'Y' +        => 'X+Y'
 'X' 'Y' IFT      => 'IFT(X, Y)'
 'A' 'B' 'C' IFTE => 'IFTE(A, B, C)'
 5 SQ              => 25               (numeric input unchanged)
