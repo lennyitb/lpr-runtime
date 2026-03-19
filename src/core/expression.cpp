@@ -140,16 +140,26 @@ std::vector<ExprToken> shunting_yard(const std::vector<ExprToken>& tokens) {
     std::vector<ExprToken> output;
     std::vector<ExprToken> op_stack;
 
-    for (const auto& tok : tokens) {
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const auto& tok = tokens[i];
         switch (tok.type) {
             case ExprTokenType::Number:
-            case ExprTokenType::Name:
                 output.push_back(tok);
                 break;
+            case ExprTokenType::Name:
+                // If followed by LParen, this is a function call
+                if (i + 1 < tokens.size() && tokens[i + 1].type == ExprTokenType::LParen) {
+                    op_stack.push_back({ExprTokenType::Func, tok.value});
+                } else {
+                    output.push_back(tok);
+                }
+                break;
             case ExprTokenType::Comma:
-                // Commas are used in function calls within expressions;
-                // for shunting-yard eval, treat like a separator — not handled here.
-                // Fall through for now (commas should not appear in eval path).
+                // Pop operators until LParen (function arg separator)
+                while (!op_stack.empty() && op_stack.back().type != ExprTokenType::LParen) {
+                    output.push_back(op_stack.back());
+                    op_stack.pop_back();
+                }
                 break;
             case ExprTokenType::Op: {
                 while (!op_stack.empty() && op_stack.back().type == ExprTokenType::Op) {
@@ -178,6 +188,14 @@ std::vector<ExprToken> shunting_yard(const std::vector<ExprToken>& tokens) {
                     throw std::runtime_error("Mismatched parentheses");
                 }
                 op_stack.pop_back(); // discard LParen
+                // If top of stack is a function, pop it to output
+                if (!op_stack.empty() && op_stack.back().type == ExprTokenType::Func) {
+                    output.push_back(op_stack.back());
+                    op_stack.pop_back();
+                }
+                break;
+            case ExprTokenType::Func:
+                // Func tokens are only created internally, not from input
                 break;
         }
     }
@@ -300,6 +318,17 @@ Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
                 }
                 stack.push_back(val);
             }
+        } else if (tok.type == ExprTokenType::Func) {
+            // Dispatch function call through the command registry.
+            // Pop arg from eval stack, push to store, execute command, pop result back.
+            if (stack.empty()) throw std::runtime_error("Malformed expression");
+            Object arg = stack.back(); stack.pop_back();
+            std::string upper = tok.value;
+            std::transform(upper.begin(), upper.end(), upper.begin(),
+                [](unsigned char c) { return std::toupper(c); });
+            ctx.store().push(arg);
+            ctx.execute_tokens({Token::make_command(upper)});
+            stack.push_back(ctx.store().pop());
         } else if (tok.type == ExprTokenType::Op) {
             if (tok.value == "NEG") {
                 if (stack.empty()) throw std::runtime_error("Malformed expression");

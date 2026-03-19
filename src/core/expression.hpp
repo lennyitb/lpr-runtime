@@ -10,7 +10,7 @@ class Context;
 
 // --- Expression token types (exposed for EXPLODE/SUBST) ---
 
-enum class ExprTokenType { Number, Name, Op, LParen, RParen, Comma };
+enum class ExprTokenType { Number, Name, Op, LParen, RParen, Comma, Func };
 
 struct ExprToken {
     ExprTokenType type;
