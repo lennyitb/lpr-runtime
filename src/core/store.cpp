@@ -70,6 +70,19 @@ void Store::create_schema() {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS stash (
+            group_id INTEGER NOT NULL,
+            pos INTEGER NOT NULL,
+            object_id INTEGER NOT NULL REFERENCES objects(id),
+            PRIMARY KEY(group_id, pos)
+        );
+        CREATE TABLE IF NOT EXISTS stash_history (
+            seq INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            pos INTEGER NOT NULL,
+            object_id INTEGER NOT NULL REFERENCES objects(id),
+            PRIMARY KEY(seq, group_id, pos)
+        );
     )");
 }
 
@@ -204,14 +217,23 @@ int Store::snapshot_stack() {
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 
+    // Copy stash rows into stash_history
+    sqlite3_prepare_v2(db_,
+        "INSERT INTO stash_history (seq, group_id, pos, object_id) SELECT ?, group_id, pos, object_id FROM stash",
+        -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, seq);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
     set_undo_seq(seq);
     return seq;
 }
 
 bool Store::restore_stack(int seq) {
-    // For seq 0 (initial empty state), we just clear the stack
+    // For seq 0 (initial empty state), we just clear the stack and stash
     if (seq == 0) {
         clear_stack();
+        stash_clear();
         set_undo_seq(0);
         return true;
     }
@@ -231,6 +253,15 @@ bool Store::restore_stack(int seq) {
     clear_stack();
     sqlite3_prepare_v2(db_,
         "INSERT INTO stack (pos, object_id) SELECT pos, object_id FROM history WHERE seq = ?",
+        -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, seq);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    // Clear current stash and restore from snapshot
+    stash_clear();
+    sqlite3_prepare_v2(db_,
+        "INSERT INTO stash (group_id, pos, object_id) SELECT group_id, pos, object_id FROM stash_history WHERE seq = ?",
         -1, &stmt, nullptr);
     sqlite3_bind_int(stmt, 1, seq);
     sqlite3_step(stmt);
@@ -424,6 +455,92 @@ void Store::set_meta(const std::string& key, const std::string& value) {
     sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+}
+
+// --- Stash ---
+
+void Store::stash_push(const std::vector<Object>& group) {
+    // Next group_id = max existing + 1
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(group_id), 0) FROM stash", -1, &stmt, nullptr);
+    int gid = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        gid = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    gid += 1;
+
+    for (int i = 0; i < static_cast<int>(group.size()); ++i) {
+        // Insert object
+        sqlite3_prepare_v2(db_, "INSERT INTO objects (type_tag, data) VALUES (?, ?)", -1, &stmt, nullptr);
+        sqlite3_bind_int(stmt, 1, static_cast<int>(type_tag(group[i])));
+        std::string data = serialize(group[i]);
+        sqlite3_bind_text(stmt, 2, data.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        int obj_id = static_cast<int>(sqlite3_last_insert_rowid(db_));
+
+        // Insert stash row
+        sqlite3_prepare_v2(db_, "INSERT INTO stash (group_id, pos, object_id) VALUES (?, ?, ?)", -1, &stmt, nullptr);
+        sqlite3_bind_int(stmt, 1, gid);
+        sqlite3_bind_int(stmt, 2, i);
+        sqlite3_bind_int(stmt, 3, obj_id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
+std::vector<Object> Store::stash_pop() {
+    // Find the highest group_id
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(group_id), 0) FROM stash", -1, &stmt, nullptr);
+    int gid = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        gid = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+
+    if (gid == 0) {
+        throw std::runtime_error("Stash is empty");
+    }
+
+    // Read all items in the group, ordered by pos
+    std::vector<Object> group;
+    sqlite3_prepare_v2(db_,
+        "SELECT o.type_tag, o.data FROM stash s JOIN objects o ON s.object_id = o.id "
+        "WHERE s.group_id = ? ORDER BY s.pos",
+        -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, gid);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto tag = static_cast<TypeTag>(sqlite3_column_int(stmt, 0));
+        const char* data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        group.push_back(deserialize(tag, data ? data : ""));
+    }
+    sqlite3_finalize(stmt);
+
+    // Delete the group
+    sqlite3_prepare_v2(db_, "DELETE FROM stash WHERE group_id = ?", -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, gid);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    return group;
+}
+
+int Store::stash_depth() {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT COUNT(DISTINCT group_id) FROM stash", -1, &stmt, nullptr);
+    int d = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        d = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return d;
+}
+
+void Store::stash_clear() {
+    exec_sql("DELETE FROM stash");
 }
 
 } // namespace lpr

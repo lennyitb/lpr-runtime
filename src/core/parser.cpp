@@ -160,11 +160,12 @@ std::vector<Token> parse(const std::string& input) {
                 ++i;
             }
             if (i < len) ++i; // skip closing '
-            // If it contains operators/spaces, it's a Symbol; otherwise a Name
+            // If it contains operators/spaces/parens/commas, it's a Symbol; otherwise a Name
             bool has_ops = false;
             for (char c : value) {
                 if (c == '+' || c == '-' || c == '*' || c == '/' ||
-                    c == '^' || c == '=' || c == ' ') {
+                    c == '^' || c == '=' || c == ' ' || c == '(' ||
+                    c == ')' || c == ',') {
                     has_ops = true;
                     break;
                 }

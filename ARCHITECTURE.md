@@ -170,6 +170,23 @@ CREATE TABLE history (
     stack_json TEXT NOT NULL          -- JSON array of {level, type, data}
 );
 
+-- Auxiliary stash stack (LIFO of grouped objects)
+CREATE TABLE stash (
+    group_id  INTEGER NOT NULL,
+    pos       INTEGER NOT NULL,
+    object_id INTEGER NOT NULL REFERENCES objects(id),
+    PRIMARY KEY(group_id, pos)
+);
+
+-- Stash history (for undo/redo)
+CREATE TABLE stash_history (
+    seq       INTEGER NOT NULL,
+    group_id  INTEGER NOT NULL,
+    pos       INTEGER NOT NULL,
+    object_id INTEGER NOT NULL REFERENCES objects(id),
+    PRIMARY KEY(seq, group_id, pos)
+);
+
 -- Runtime metadata
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
@@ -241,6 +258,33 @@ Commands pop their arguments from the stack, do work, and push results.
 On error, they push an `Error` object and throw an internal exception that
 the `lpr_exec` transaction handler catches (rolling back the failed operation
 and leaving the error on stack).
+
+### Auxiliary Stash Stack
+
+The stash is a hidden LIFO stack alongside the main data stack, stored in the
+`stash` SQLite table. Items are stored in **groups** (identified by sequential
+`group_id`). STASH/STASHN push a group, UNSTASH pops the most recent group.
+
+The stash participates in undo/redo: each `snapshot_stack()` also snapshots the
+stash into `stash_history`, and `restore_stack()` restores both the main stack
+and the stash atomically. This ensures crash safety and undo consistency.
+
+The stash enables a zipper-like decomposition workflow for symbolic expressions:
+EXPLODE peels one layer of an expression, STASHN hides the surrounding context,
+the user modifies the focused operand, then ASSEMBLE reconstructs by repeatedly
+unstashing and evaluating operator programs.
+
+### Expression Syntax
+
+The expression tokenizer (in `expression.cpp`) handles infix notation with:
+- Operators: `+`, `-`, `*`, `/`, `^` with standard precedence
+- Unary negation (detected contextually, emitted as `NEG` operator)
+- Parentheses for grouping
+- Function calls: `FUNC(arg)` and multi-argument `FUNC(a, b, c)` syntax
+- Comma token type for argument separation
+
+This tokenizer is used by EVAL (for evaluating symbolic expressions), SUBST (for
+token-level substitution), and EXPLODE (for structural decomposition).
 
 ### Execution Flow of `lpr_exec(ctx, input)`
 

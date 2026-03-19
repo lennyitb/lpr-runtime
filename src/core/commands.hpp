@@ -33,6 +33,7 @@ private:
     void register_logic_commands();
     void register_transcendental_commands();
     void register_string_commands();
+    void register_symbolic_commands();
 };
 
 } // namespace lpr

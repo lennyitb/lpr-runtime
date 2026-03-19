@@ -8,16 +8,7 @@
 
 namespace lpr {
 
-namespace {
-
-// --- Expression tokenizer ---
-
-enum class ExprTokenType { Number, Name, Op, LParen, RParen };
-
-struct ExprToken {
-    ExprTokenType type;
-    std::string value;
-};
+// --- Expression tokenizer (public) ---
 
 std::vector<ExprToken> tokenize_expression(const std::string& expr) {
     std::vector<ExprToken> tokens;
@@ -31,6 +22,7 @@ std::vector<ExprToken> tokenize_expression(const std::string& expr) {
 
         if (c == '(') { tokens.push_back({ExprTokenType::LParen, "("}); ++i; continue; }
         if (c == ')') { tokens.push_back({ExprTokenType::RParen, ")"}); ++i; continue; }
+        if (c == ',') { tokens.push_back({ExprTokenType::Comma, ","}); ++i; continue; }
 
         // Operators: +, -, *, /, ^
         if (c == '+' || c == '*' || c == '/' || c == '^') {
@@ -41,10 +33,11 @@ std::vector<ExprToken> tokenize_expression(const std::string& expr) {
 
         // Minus: could be unary negation or binary subtraction
         if (c == '-') {
-            // Unary if at start, or after operator or left paren
+            // Unary if at start, or after operator, left paren, or comma
             bool unary = tokens.empty() ||
                          tokens.back().type == ExprTokenType::Op ||
-                         tokens.back().type == ExprTokenType::LParen;
+                         tokens.back().type == ExprTokenType::LParen ||
+                         tokens.back().type == ExprTokenType::Comma;
             if (unary && i + 1 < len && (std::isdigit(static_cast<unsigned char>(expr[i+1])) || expr[i+1] == '.')) {
                 // Negative number literal
                 size_t start = i;
@@ -110,7 +103,7 @@ std::vector<ExprToken> tokenize_expression(const std::string& expr) {
     return tokens;
 }
 
-// --- Shunting-yard: infix to RPN ---
+// --- Precedence (public) ---
 
 int precedence(const std::string& op) {
     if (op == "+" || op == "-") return 1;
@@ -119,6 +112,25 @@ int precedence(const std::string& op) {
     if (op == "NEG")            return 4; // unary negation, highest
     return 0;
 }
+
+// --- needs_parens (public) ---
+
+bool needs_parens(const std::string& expr, int outer_prec) {
+    int depth = 0;
+    int min_prec = 10;
+    for (char c : expr) {
+        if (c == '(') { ++depth; continue; }
+        if (c == ')') { --depth; continue; }
+        if (depth > 0) continue;
+        if (c == '+' || c == '-') min_prec = std::min(min_prec, 1);
+        if (c == '*' || c == '/') min_prec = std::min(min_prec, 2);
+    }
+    return min_prec < outer_prec;
+}
+
+namespace {
+
+// --- Shunting-yard: infix to RPN ---
 
 bool is_right_assoc(const std::string& op) {
     return op == "^" || op == "NEG";
@@ -133,6 +145,11 @@ std::vector<ExprToken> shunting_yard(const std::vector<ExprToken>& tokens) {
             case ExprTokenType::Number:
             case ExprTokenType::Name:
                 output.push_back(tok);
+                break;
+            case ExprTokenType::Comma:
+                // Commas are used in function calls within expressions;
+                // for shunting-yard eval, treat like a separator — not handled here.
+                // Fall through for now (commas should not appear in eval path).
                 break;
             case ExprTokenType::Op: {
                 while (!op_stack.empty() && op_stack.back().type == ExprTokenType::Op) {

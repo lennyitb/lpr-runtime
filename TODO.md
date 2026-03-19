@@ -1,0 +1,4 @@
+- sqrt always returns real
+- is there a way to convert back to exact
+- no ^ command
+- SQ doesn't work on expressions

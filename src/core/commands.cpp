@@ -83,6 +83,10 @@ Object binary_numeric(const Object& a, const Object& b,
     return Error{10, "Bad argument type"};
 }
 
+bool is_right_assoc(const std::string& op) {
+    return op == "^" || op == "NEG";
+}
+
 // Check if an object is symbolic (Name or Symbol)
 bool is_symbolic(const Object& obj) {
     return std::holds_alternative<Name>(obj) || std::holds_alternative<Symbol>(obj);
@@ -95,21 +99,15 @@ std::string to_expr_string(const Object& obj) {
     return repr(obj);
 }
 
-// Determine if an expression string needs parentheses when used as an operand
-// of an operator with the given precedence
-bool needs_parens(const std::string& expr, int outer_prec) {
-    // Simple heuristic: if the expression contains +/- at the top level,
-    // it has precedence 1. Wrap it if outer operator has higher precedence.
-    int depth = 0;
-    int min_prec = 10;
-    for (char c : expr) {
-        if (c == '(') { ++depth; continue; }
-        if (c == ')') { --depth; continue; }
-        if (depth > 0) continue;
-        if (c == '+' || c == '-') min_prec = std::min(min_prec, 1);
-        if (c == '*' || c == '/') min_prec = std::min(min_prec, 2);
+// Build a symbolic function call: Symbol{"FUNC(a, b, ...)"} for any arity
+Object symbolic_func(const std::string& func, const std::vector<Object>& args) {
+    std::string result = func + "(";
+    for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += to_expr_string(args[i]);
     }
-    return min_prec < outer_prec;
+    result += ")";
+    return Symbol{result};
 }
 
 // Build a symbolic expression from a binary operation
@@ -166,6 +164,7 @@ CommandRegistry::CommandRegistry() {
     register_logic_commands();
     register_transcendental_commands();
     register_string_commands();
+    register_symbolic_commands();
 }
 
 void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
@@ -520,6 +519,10 @@ void CommandRegistry::register_arithmetic_commands() {
     register_command("INV", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) {
+            s.push(symbolic_func("INV", {a}));
+            return;
+        }
         if (std::holds_alternative<Integer>(a)) {
             auto& v = std::get<Integer>(a);
             if (v == 0) {
@@ -560,6 +563,10 @@ void CommandRegistry::register_arithmetic_commands() {
     register_command("ABS", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) {
+            s.push(symbolic_func("ABS", {a}));
+            return;
+        }
         if (std::holds_alternative<Integer>(a)) {
             auto& v = std::get<Integer>(a);
             s.push(v < 0 ? Integer(-v) : v);
@@ -815,6 +822,10 @@ void CommandRegistry::register_program_commands() {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object cond = s.pop();      // level 1
         Object then_prog = s.pop(); // level 2
+        if (is_symbolic(cond) || is_symbolic(then_prog)) {
+            s.push(symbolic_func("IFT", {then_prog, cond}));
+            return;
+        }
         if (is_truthy(cond)) {
             if (std::holds_alternative<Program>(then_prog)) {
                 ctx.execute_tokens(std::get<Program>(then_prog).tokens);
@@ -829,6 +840,10 @@ void CommandRegistry::register_program_commands() {
         Object cond = s.pop();      // level 1
         Object then_prog = s.pop(); // level 2
         Object else_prog = s.pop(); // level 3
+        if (is_symbolic(cond) || is_symbolic(then_prog) || is_symbolic(else_prog)) {
+            s.push(symbolic_func("IFTE", {else_prog, then_prog, cond}));
+            return;
+        }
         Object& chosen = is_truthy(cond) ? then_prog : else_prog;
         if (std::holds_alternative<Program>(chosen)) {
             ctx.execute_tokens(std::get<Program>(chosen).tokens);
@@ -1019,36 +1034,42 @@ void CommandRegistry::register_transcendental_commands() {
     register_command("SIN", [to_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("SIN", {a})); return; }
         s.push(Real(std::sin(to_rad(to_real_value(a), s))));
     });
 
     register_command("COS", [to_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("COS", {a})); return; }
         s.push(Real(std::cos(to_rad(to_real_value(a), s))));
     });
 
     register_command("TAN", [to_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("TAN", {a})); return; }
         s.push(Real(std::tan(to_rad(to_real_value(a), s))));
     });
 
     register_command("ASIN", [from_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("ASIN", {a})); return; }
         s.push(from_rad(std::asin(to_double_value(a)), s));
     });
 
     register_command("ACOS", [from_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("ACOS", {a})); return; }
         s.push(from_rad(std::acos(to_double_value(a)), s));
     });
 
     register_command("ATAN", [from_rad](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("ATAN", {a})); return; }
         s.push(from_rad(std::atan(to_double_value(a)), s));
     });
 
@@ -1063,12 +1084,14 @@ void CommandRegistry::register_transcendental_commands() {
     register_command("EXP", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("EXP", {a})); return; }
         s.push(Real(std::exp(to_double_value(a))));
     });
 
     register_command("LN", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("LN", {a})); return; }
         double v = to_double_value(a);
         if (v <= 0) throw std::runtime_error("Bad argument value");
         s.push(Real(std::log(v)));
@@ -1092,6 +1115,7 @@ void CommandRegistry::register_transcendental_commands() {
     register_command("SQRT", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("SQRT", {a})); return; }
         if (std::holds_alternative<Integer>(a)) {
             auto& v = std::get<Integer>(a);
             if (v < 0) throw std::runtime_error("Bad argument value");
@@ -1112,6 +1136,7 @@ void CommandRegistry::register_transcendental_commands() {
     register_command("SQ", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        if (is_symbolic(a)) { s.push(symbolic_func("SQ", {a})); return; }
         Object result = binary_numeric(a, a,
             [](const Integer& x, const Integer& y) -> Integer { return x * y; },
             [](const Rational& x, const Rational& y) -> Rational { return x * y; },
@@ -1446,6 +1471,285 @@ void CommandRegistry::register_string_commands() {
         int cp = static_cast<int>(std::get<Integer>(a));
         if (cp < 0 || cp > 127) throw std::runtime_error("Bad argument value");
         s.push(String{std::string(1, static_cast<char>(cp))});
+    });
+}
+
+// ---- Symbolic Manipulation Commands ----
+
+void CommandRegistry::register_symbolic_commands() {
+    // SUBST: ( 'expr' 'var' 'replacement' -- 'result' )
+    // Tokenize expr, replace matching Name tokens with replacement, reconstruct string.
+    register_command("SUBST", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object repl_obj = s.pop();  // level 1: replacement
+        Object var_obj = s.pop();   // level 2: variable name
+        Object expr_obj = s.pop();  // level 3: expression
+
+        if (!std::holds_alternative<Symbol>(expr_obj) && !std::holds_alternative<Name>(expr_obj))
+            throw std::runtime_error("Bad argument type");
+        if (!std::holds_alternative<Name>(var_obj))
+            throw std::runtime_error("Bad argument type");
+
+        std::string expr_str = to_expr_string(expr_obj);
+        std::string var_name = std::get<Name>(var_obj).value;
+        std::string repl_str = to_expr_string(repl_obj);
+
+        auto tokens = tokenize_expression(expr_str);
+
+        // Reconstruct, replacing matching Name tokens
+        std::string result;
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            auto& tok = tokens[i];
+            if (tok.type == ExprTokenType::Name && tok.value == var_name) {
+                // Check if replacement needs parentheses:
+                // Determine the context precedence by looking at surrounding operators
+                int ctx_prec = 0;
+                // Look backwards for an operator
+                for (int j = static_cast<int>(i) - 1; j >= 0; --j) {
+                    if (tokens[j].type == ExprTokenType::Op) {
+                        ctx_prec = precedence(tokens[j].value);
+                        break;
+                    }
+                    if (tokens[j].type != ExprTokenType::RParen) break;
+                }
+                // Look forward for an operator
+                for (size_t j = i + 1; j < tokens.size(); ++j) {
+                    if (tokens[j].type == ExprTokenType::Op) {
+                        int fwd_prec = precedence(tokens[j].value);
+                        if (fwd_prec > ctx_prec) ctx_prec = fwd_prec;
+                        break;
+                    }
+                    if (tokens[j].type != ExprTokenType::LParen) break;
+                }
+
+                if (needs_parens(repl_str, ctx_prec)) {
+                    result += "(" + repl_str + ")";
+                } else {
+                    result += repl_str;
+                }
+            } else if (tok.type == ExprTokenType::Comma) {
+                result += ", ";
+            } else {
+                result += tok.value;
+            }
+        }
+
+        s.push(Symbol{result});
+    });
+
+    // STASH: pop 1 item from stack, store as single-item group on stash
+    register_command("STASH", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object item = s.pop();
+        s.stash_push({item});
+    });
+
+    // STASHN: pop count from level 1, pop N items, store as group on stash
+    register_command("STASHN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 0 || s.depth() < n) throw std::runtime_error("Too few arguments");
+
+        // Pop N items (level 1 first = last in group)
+        std::vector<Object> group(n);
+        for (int i = n - 1; i >= 0; --i) {
+            group[i] = s.pop();
+        }
+        s.stash_push(group);
+    });
+
+    // UNSTASH: pop most recent group from stash, push items back to stack in original order
+    register_command("UNSTASH", [](Store& s, Context&) {
+        auto group = s.stash_pop();
+        for (auto& item : group) {
+            s.push(item);
+        }
+    });
+
+    // EXPLODE: decompose a Symbol's top-level operation into operands + operator
+    // ( 'expr' -- operand1 [operand2 ...] « operator » )
+    register_command("EXPLODE", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        if (!std::holds_alternative<Symbol>(obj))
+            throw std::runtime_error("Bad argument type");
+        std::string expr = std::get<Symbol>(obj).value;
+        auto tokens = tokenize_expression(expr);
+
+        if (tokens.empty()) throw std::runtime_error("Cannot EXPLODE empty expression");
+
+        // Check for function-call pattern: NAME(args)
+        if (tokens.size() >= 3 &&
+            tokens[0].type == ExprTokenType::Name &&
+            tokens[1].type == ExprTokenType::LParen &&
+            tokens.back().type == ExprTokenType::RParen) {
+            std::string func_name = tokens[0].value;
+            // Split arguments by commas at paren depth 1 (the outer parens of the call)
+            std::vector<std::string> args;
+            std::string current_arg;
+            int depth = 0;
+            for (size_t i = 2; i < tokens.size() - 1; ++i) {
+                auto& tok = tokens[i];
+                if (tok.type == ExprTokenType::LParen) ++depth;
+                if (tok.type == ExprTokenType::RParen) --depth;
+                if (tok.type == ExprTokenType::Comma && depth == 0) {
+                    // Trim whitespace from arg
+                    args.push_back(current_arg);
+                    current_arg.clear();
+                } else {
+                    current_arg += tok.value;
+                }
+            }
+            if (!current_arg.empty()) {
+                args.push_back(current_arg);
+            }
+
+            // Push each argument as the appropriate type
+            for (auto& arg : args) {
+                // Try to parse as integer
+                bool is_number = true;
+                bool has_dot = false;
+                for (size_t ci = 0; ci < arg.size(); ++ci) {
+                    char c = arg[ci];
+                    if (c == '-' && ci == 0) continue;
+                    if (c == '.' && !has_dot) { has_dot = true; continue; }
+                    if (!std::isdigit(static_cast<unsigned char>(c))) { is_number = false; break; }
+                }
+                if (is_number && !arg.empty() && arg != "-") {
+                    if (has_dot) {
+                        s.push(Real(arg));
+                    } else {
+                        s.push(Integer(arg));
+                    }
+                } else {
+                    // Check if it's a simple name (no operators)
+                    auto arg_tokens = tokenize_expression(arg);
+                    if (arg_tokens.size() == 1 && arg_tokens[0].type == ExprTokenType::Name) {
+                        s.push(Name{arg_tokens[0].value});
+                    } else {
+                        s.push(Symbol{arg});
+                    }
+                }
+            }
+
+            // Push function as a Program
+            s.push(Program{{Token::make_command(func_name)}});
+            return;
+        }
+
+        // Find the lowest-precedence operator at paren depth 0
+        int min_prec = 100;
+        int min_idx = -1;
+        int paren_depth = 0;
+
+        for (int i = 0; i < static_cast<int>(tokens.size()); ++i) {
+            auto& tok = tokens[i];
+            if (tok.type == ExprTokenType::LParen) { ++paren_depth; continue; }
+            if (tok.type == ExprTokenType::RParen) { --paren_depth; continue; }
+            if (paren_depth > 0) continue;
+
+            if (tok.type == ExprTokenType::Op && tok.value != "NEG") {
+                int p = precedence(tok.value);
+                // For left-to-right (non-right-assoc), take the LAST (rightmost) occurrence
+                // at the minimum precedence level so we peel left-to-right.
+                // For right-to-left, take the first occurrence.
+                if (p < min_prec) {
+                    min_prec = p;
+                    min_idx = i;
+                } else if (p == min_prec && !is_right_assoc(tok.value)) {
+                    min_idx = i;  // rightmost for left-associative
+                }
+            }
+        }
+
+        // Handle unary NEG at depth 0
+        if (min_idx < 0) {
+            // Check for unary NEG
+            if (tokens.size() >= 2 && tokens[0].type == ExprTokenType::Op && tokens[0].value == "NEG") {
+                // Unary negation: push operand and NEG program
+                std::string operand_str;
+                for (size_t i = 1; i < tokens.size(); ++i) {
+                    operand_str += tokens[i].value;
+                }
+                auto operand_tokens = tokenize_expression(operand_str);
+                if (operand_tokens.size() == 1 && operand_tokens[0].type == ExprTokenType::Name) {
+                    s.push(Name{operand_tokens[0].value});
+                } else if (operand_tokens.size() == 1 && operand_tokens[0].type == ExprTokenType::Number) {
+                    bool has_dot = operand_str.find('.') != std::string::npos;
+                    s.push(has_dot ? Object(Real(operand_str)) : Object(Integer(operand_str)));
+                } else {
+                    s.push(Symbol{operand_str});
+                }
+                s.push(Program{{Token::make_command("NEG")}});
+                return;
+            }
+
+            // Atomic expression or fully-parenthesized — check if outer parens can be stripped
+            if (tokens.size() >= 2 &&
+                tokens[0].type == ExprTokenType::LParen &&
+                tokens.back().type == ExprTokenType::RParen) {
+                // Strip outer parens and retry
+                std::string inner;
+                for (size_t i = 1; i + 1 < tokens.size(); ++i) {
+                    inner += tokens[i].value;
+                }
+                s.push(Symbol{inner});
+                // Re-invoke EXPLODE
+                // Actually, just throw back to avoid recursion in the command implementation
+                // Instead, we'll re-tokenize and check again — but for simplicity, throw
+            }
+
+            throw std::runtime_error("Cannot EXPLODE atomic expression");
+        }
+
+        // Binary operator found — extract left and right operands
+        std::string left_str, right_str;
+        for (int i = 0; i < min_idx; ++i) left_str += tokens[i].value;
+        for (int i = min_idx + 1; i < static_cast<int>(tokens.size()); ++i) right_str += tokens[i].value;
+        std::string op = tokens[min_idx].value;
+
+        // Push left operand
+        auto push_operand = [&s](const std::string& str) {
+            auto toks = tokenize_expression(str);
+            if (toks.size() == 1 && toks[0].type == ExprTokenType::Number) {
+                bool has_dot = str.find('.') != std::string::npos;
+                if (has_dot) {
+                    s.push(Real(str));
+                } else {
+                    s.push(Integer(str));
+                }
+            } else if (toks.size() == 1 && toks[0].type == ExprTokenType::Name) {
+                s.push(Name{toks[0].value});
+            } else {
+                s.push(Symbol{str});
+            }
+        };
+
+        push_operand(left_str);
+        push_operand(right_str);
+
+        // Push operator as a Program
+        s.push(Program{{Token::make_command(op)}});
+    });
+
+    // ASSEMBLE: loop while stash non-empty — UNSTASH then EVAL level 1
+    register_command("ASSEMBLE", [](Store& s, Context& ctx) {
+        while (s.stash_depth() > 0) {
+            auto group = s.stash_pop();
+            for (auto& item : group) {
+                s.push(item);
+            }
+            // EVAL the top of stack (should be a Program from EXPLODE)
+            Object top = s.pop();
+            if (std::holds_alternative<Program>(top)) {
+                ctx.execute_tokens(std::get<Program>(top).tokens);
+            } else {
+                s.push(top);
+            }
+        }
     });
 }
 

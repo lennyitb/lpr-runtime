@@ -448,6 +448,96 @@ The `+` command is overloaded: when both operands are Strings, it concatenates. 
 
 ---
 
+## Symbolic Manipulation
+
+Commands for inspecting, decomposing, and reconstructing symbolic expressions. These commands operate on the expression tree stored as an infix string inside a Symbol, using the expression tokenizer to work at the structural level.
+
+### Symbolic Pass-Through
+
+When a symbolic operand (Name or Symbol) is passed to a unary math command, the command produces a Symbol wrapping the function call instead of evaluating numerically. This allows building symbolic expressions compositionally.
+
+**Commands with symbolic pass-through:** `SQ`, `SQRT`, `SIN`, `COS`, `TAN`, `ASIN`, `ACOS`, `ATAN`, `EXP`, `LN`, `ABS`, `NEG`, `INV`, `IFT`, `IFTE`
+
+```
+'X' SQ           => 'SQ(X)'
+'A+B' SQRT       => 'SQRT(A+B)'
+'X' 'Y' IFT      => 'IFT(X, Y)'
+'A' 'B' 'C' IFTE => 'IFTE(A, B, C)'
+5 SQ              => 25               (numeric input unchanged)
+```
+
+### Expression Syntax
+
+Expressions inside Symbols support standard infix notation with operator precedence (`+` `-` at precedence 1, `*` `/` at precedence 2, `^` at precedence 3), parentheses for grouping, function calls (`FUNC(arg)`), and comma-separated multi-argument function calls (`FUNC(a, b, c)`).
+
+### Substitution
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SUBST` | `( 'expr' 'var' 'replacement' -- 'result' )` | Replace all occurrences of variable `var` in `expr` with `replacement` |
+
+SUBST operates at the token level: it tokenizes the expression, replaces matching Name tokens, and reconstructs the string. Compound replacements are automatically parenthesized when inserted into higher-precedence contexts.
+
+```
+'X+1' 'X' 'Y' SUBST          => 'Y+1'
+'X*2' 'X' 'A+B' SUBST        => '(A+B)*2'       (parens added)
+'X+X' 'X' 'Y' SUBST          => 'Y+Y'           (all occurrences)
+'X+1' 'Y' 'Z' SUBST          => 'X+1'           (no match)
+'IFTE(X, Y, Z)' 'X' 'A' SUBST => 'IFTE(A, Y, Z)'
+```
+
+### Auxiliary Stash Stack
+
+The stash is a hidden LIFO auxiliary stack stored in SQLite alongside the main stack. Items are stored and retrieved in groups, enabling structured decomposition/reconstruction workflows. The stash participates in undo/redo — all stash mutations are transactional.
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `STASH` | `( item -- )` | Pop 1 item from stack, store as single-item group on stash |
+| `STASHN` | `( item₁...itemₙ n -- )` | Pop count from level 1, pop N items, store as group on stash |
+| `UNSTASH` | `( -- item₁...itemₙ )` | Pop most recent group from stash, push items to stack in original order |
+
+```
+42 STASH                       (stack empty; stash: [42])
+UNSTASH                   => 42 (stash empty)
+1 2 3 3 STASHN                (stack empty; stash: [1, 2, 3])
+UNSTASH                   => 1 2 3
+```
+
+### Decomposition and Reconstruction
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `EXPLODE` | `( 'expr' -- operands... « op » )` | Decompose top-level operation into operands and operator program |
+| `ASSEMBLE` | `( operands... -- result )` | Loop: while stash non-empty, UNSTASH then EVAL level 1 |
+
+**EXPLODE** peels one layer off a symbolic expression:
+
+- **Binary operators:** finds the lowest-precedence operator at paren depth 0 and splits into left operand, right operand, and operator program.
+- **Function calls:** `FUNC(args...)` becomes the arguments pushed individually, followed by a `« FUNC »` program.
+- Operands are pushed as their natural type: numeric literals as Integer/Real, simple names as Name, sub-expressions as Symbol.
+- The operator is always pushed as a single-token Program so that EVAL naturally executes it.
+
+```
+'A+B' EXPLODE              => 'A' 'B' « + »
+'X*Y-3' EXPLODE            => 'X*Y' 3 « - »
+'SIN(X)' EXPLODE           => 'X' « SIN »
+'IFTE(A, B, C)' EXPLODE    => 'A' 'B' 'C' « IFTE »
+'SQ(X)+3' EXPLODE          => 'SQ(X)' 3 « + »
+```
+
+**ASSEMBLE** is the inverse of a multi-level EXPLODE+STASH sequence. It repeatedly unstashes a group and EVALs the top item (the operator program), rebuilding the expression from the leaves up.
+
+```
+'SQ(X)+3' EXPLODE          => 'SQ(X)' 3 « + »
+2 STASHN                       stash: [3, « + »]
+EXPLODE                     => 'X' « SQ »
+STASH                          stash: [« SQ »], [3, « + »]
+DROP 'Y+1'                  => 'Y+1'
+ASSEMBLE                    => 'SQ(Y+1)+3'
+```
+
+---
+
 ## Data Types
 
 ### Numeric Types
@@ -600,3 +690,9 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 104 | `REPL` | String | 3 | Replace first occurrence |
 | 105 | `NUM` | String | 1 | Char to codepoint |
 | 106 | `CHR` | String | 1 | Codepoint to char |
+| 107 | `SUBST` | Symbolic | 3 | Substitute variable in expression |
+| 108 | `STASH` | Symbolic | 1 | Stash one item |
+| 109 | `STASHN` | Symbolic | n+1 | Stash N items as a group |
+| 110 | `UNSTASH` | Symbolic | 0 | Restore most recent stash group |
+| 111 | `EXPLODE` | Symbolic | 1 | Decompose top-level operation |
+| 112 | `ASSEMBLE` | Symbolic | varies | Reassemble from stash groups |

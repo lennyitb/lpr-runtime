@@ -29,6 +29,12 @@ public:
     int  snapshot_stack();          // returns sequence number
     bool restore_stack(int seq);
 
+    // Stash (auxiliary hidden stack, LIFO of groups)
+    void stash_push(const std::vector<Object>& group);
+    std::vector<Object> stash_pop();
+    int  stash_depth();  // number of groups
+    void stash_clear();
+
     // Variables
     void   store_variable(int dir_id, const std::string& name, const Object& obj);
     Object recall_variable(int dir_id, const std::string& name);
