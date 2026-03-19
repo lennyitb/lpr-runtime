@@ -1819,6 +1819,17 @@ void CommandRegistry::register_symbolic_commands() {
 
     // ASSEMBLE: loop while stash non-empty — UNSTASH then EVAL level 1
     register_command("ASSEMBLE", [](Store& s, Context& ctx) {
+        // Implicit stash: scoop remaining stack items into a new stash group
+        // so that EXPLODE ASSEMBLE works without an explicit STASH in between.
+        if (s.depth() > 0) {
+            int n = s.depth();
+            std::vector<Object> group(n);
+            for (int i = n - 1; i >= 0; --i) {
+                group[i] = s.pop();
+            }
+            s.stash_push(group);
+        }
+
         while (s.stash_depth() > 0) {
             auto group = s.stash_pop();
             for (auto& item : group) {
