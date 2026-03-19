@@ -42,3 +42,25 @@ The CLI SHALL display errors in a distinct format, distinguishable from normal s
 - **WHEN** an error occurs during execution
 - **THEN** the error message is displayed in a format distinct from normal stack values
 
+### Requirement: Execute Expression Flag (-e)
+The CLI SHALL accept one or more `-e <expression>` flags. When provided, the CLI SHALL execute each expression sequentially, print the resulting stack, and exit without entering the interactive REPL.
+
+#### Scenario: Single expression
+- **WHEN** `lpr-cli -e "3 4 +"` is run
+- **THEN** the output is `1: 7` and the exit code is 0
+
+#### Scenario: Multiple expressions
+- **WHEN** `lpr-cli -e "3 4" -e "+"` is run
+- **THEN** the output is `1: 7` and the exit code is 0
+
+#### Scenario: Expression with database
+- **WHEN** `lpr-cli mydb.lpr -e "3 4 +"` is run
+- **THEN** the expression is executed against mydb.lpr
+
+#### Scenario: Expression error
+- **WHEN** `lpr-cli -e "+"` is run with an empty stack
+- **THEN** the error is printed to stderr and the exit code is non-zero
+
+### Requirement: Help Flag (-h)
+The CLI SHALL accept a `-h` flag that prints usage information and exits.
+

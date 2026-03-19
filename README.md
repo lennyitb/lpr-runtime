@@ -35,6 +35,23 @@ cmake --build build
 
 Dependencies (Boost.Multiprecision, SQLite, Catch2) are fetched automatically via CMake FetchContent.
 
+## Usage
+
+### Interactive REPL
+
+```sh
+./build/lpr-cli                  # in-memory database
+./build/lpr-cli mydb.lpr         # persistent database
+```
+
+### Non-interactive (-e)
+
+```sh
+./build/lpr-cli -e "3 4 +"              # execute and print result
+./build/lpr-cli -e "3 4" -e "+"         # multiple expressions
+./build/lpr-cli mydb.lpr -e "'pi' STO"  # with persistent database
+```
+
 ## License
 
 This project is dual-licensed.

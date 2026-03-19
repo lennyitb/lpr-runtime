@@ -359,7 +359,7 @@ lpr-runtime/
 │       ├── bridge.hpp          # Abstract CASBridge interface
 │       └── symengine_backend.cpp
 ├── cli/
-│   └── main.cpp                # Interactive REPL for development
+│   └── main.cpp                # Interactive REPL and -e batch execution
 └── tests/
     ├── CMakeLists.txt
     ├── test_stack.cpp
