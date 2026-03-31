@@ -1136,8 +1136,7 @@ void CommandRegistry::register_filesystem_commands() {
     });
 
     register_command("PATH", [](Store& s, Context&) {
-        // For bootstrap, just push "HOME" — no path traversal
-        s.push(String{"HOME"});
+        s.push(String{s.dir_path(s.current_dir())});
     });
 
     register_command("CRDIR", [](Store& s, Context&) {
@@ -1151,15 +1150,56 @@ void CommandRegistry::register_filesystem_commands() {
         s.create_directory(s.current_dir(), name);
     });
 
-    register_command("VARS", [](Store& s, Context&) {
-        auto vars = s.list_variables(s.current_dir());
-        std::string list = "{ ";
-        for (size_t i = 0; i < vars.size(); ++i) {
-            if (i > 0) list += " ";
-            list += vars[i];
+    register_command("CD", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object name_obj = s.pop();
+        if (!std::holds_alternative<Name>(name_obj)) {
+            s.push(name_obj);
+            throw std::runtime_error("Expected a name");
         }
-        list += " }";
-        s.push(String{list});
+        auto& name = std::get<Name>(name_obj).value;
+        int dir_id = s.find_directory(s.current_dir(), name);
+        if (dir_id < 0) {
+            s.push(name_obj);
+            throw std::runtime_error("Directory not found");
+        }
+        s.set_current_dir(dir_id);
+    });
+
+    register_command("UPDIR", [](Store& s, Context&) {
+        int parent = s.parent_dir_id(s.current_dir());
+        if (parent >= 0) {
+            s.set_current_dir(parent);
+        }
+    });
+
+    register_command("PGDIR", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object name_obj = s.pop();
+        if (!std::holds_alternative<Name>(name_obj)) {
+            s.push(name_obj);
+            throw std::runtime_error("Expected a name");
+        }
+        auto& name = std::get<Name>(name_obj).value;
+        int dir_id = s.find_directory(s.current_dir(), name);
+        if (dir_id < 0) {
+            s.push(name_obj);
+            throw std::runtime_error("Directory not found");
+        }
+        s.purge_directory_tree(dir_id);
+    });
+
+    register_command("VARS", [](Store& s, Context&) {
+        List result;
+        auto vars = s.list_variables(s.current_dir());
+        for (auto& v : vars) {
+            result.items.push_back(Name{v});
+        }
+        auto dirs = s.list_subdirectories(s.current_dir());
+        for (auto& d : dirs) {
+            result.items.push_back(Name{d + "/"});
+        }
+        s.push(std::move(result));
     });
 }
 

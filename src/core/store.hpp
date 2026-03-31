@@ -45,6 +45,11 @@ public:
     int  home_dir_id();
     int  create_directory(int parent_id, const std::string& name);
     int  find_directory(int parent_id, const std::string& name);
+    int  parent_dir_id(int dir_id);
+    std::string dir_name(int dir_id);
+    std::string dir_path(int dir_id);
+    std::vector<std::string> list_subdirectories(int dir_id);
+    void purge_directory_tree(int dir_id);
 
     // Transaction helpers
     void begin();

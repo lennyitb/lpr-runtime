@@ -169,9 +169,12 @@ LPR provides a SQLite-backed hierarchical variable filesystem. Variables are sto
 | `RCL`   | `( 'name' -- value )` | Recall a variable's value |
 | `PURGE` | `( 'name' -- )` | Delete a variable |
 | `HOME`  | `( -- )` | Change to the home directory |
-| `PATH`  | `( -- string )` | Push the current directory path |
+| `PATH`  | `( -- string )` | Push the full current directory path |
 | `CRDIR` | `( 'name' -- )` | Create a subdirectory |
-| `VARS`  | `( -- string )` | List variables in the current directory |
+| `CD`    | `( 'name' -- )` | Change into a named subdirectory |
+| `UPDIR` | `( -- )` | Move up one directory level (no-op at HOME) |
+| `PGDIR` | `( 'name' -- )` | Recursively delete a subdirectory and its contents |
+| `VARS`  | `( -- list )` | List directory contents as Names (dirs suffixed with `/`) |
 
 Variable names are specified using quoted Names (e.g. `'x'`). STO expects the value at level 2 and the name at level 1.
 
@@ -182,8 +185,11 @@ Variable names are specified using quoted Names (e.g. `'x'`). STO expects the va
 'x' RCL         => 42
 'x' PURGE            (deletes x)
 'MYDIR' CRDIR        (creates subdirectory MYDIR)
-VARS             => "{ x y z }"
-PATH             => "HOME"
+'MYDIR' CD           (enters MYDIR)
+PATH             => "HOME/MYDIR"
+UPDIR                (back to HOME)
+VARS             => { 'x' 'MYDIR/' }
+'MYDIR' PGDIR        (deletes MYDIR and all contents)
 ```
 
 ---
@@ -757,104 +763,107 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 38 | `HOME` | Filesystem | 0 | Go to home directory |
 | 39 | `PATH` | Filesystem | 0 | Current directory path |
 | 40 | `CRDIR` | Filesystem | 1 | Create subdirectory |
-| 41 | `VARS` | Filesystem | 0 | List variables |
-| 42 | `EVAL` | Program | 1 | Evaluate object (program, name, or symbol expression) |
-| 43 | `IFT` | Program | 2 | Conditional (if-then) |
-| 44 | `IFTE` | Program | 3 | Conditional (if-then-else) |
-| 45 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |
-| 46 | `IF...THEN...END` | Control Flow | *runstream* | Conditional execution |
-| 47 | `CASE...END` | Control Flow | *runstream* | Multi-way branch |
-| 48 | `FOR...NEXT` | Control Flow | 2 + *runstream* | Counted loop with variable |
-| 49 | `FOR...STEP` | Control Flow | 2 + *runstream* | Counted loop with variable and custom step |
-| 50 | `START...NEXT` | Control Flow | 2 + *runstream* | Counted loop |
-| 51 | `START...STEP` | Control Flow | 2 + *runstream* | Counted loop with custom step |
-| 52 | `WHILE...REPEAT...END` | Control Flow | *runstream* | Pre-test loop |
-| 53 | `DO...UNTIL...END` | Control Flow | *runstream* | Post-test loop |
-| 54 | `AND` | Logic | 2 | Boolean AND |
-| 55 | `OR` | Logic | 2 | Boolean OR |
-| 56 | `NOT` | Logic | 1 | Boolean NOT |
-| 57 | `XOR` | Logic | 2 | Boolean XOR |
-| 58 | `BAND` | Bitwise | 2 | Bitwise AND |
-| 59 | `BOR` | Bitwise | 2 | Bitwise OR |
-| 60 | `BXOR` | Bitwise | 2 | Bitwise XOR |
-| 61 | `BNOT` | Bitwise | 1 | Bitwise NOT |
-| 62 | `SL` | Bitwise | 2 | Shift left |
-| 63 | `SR` | Bitwise | 2 | Shift right |
-| 64 | `ASR` | Bitwise | 2 | Arithmetic shift right |
-| 65 | `SAME` | Logic | 2 | Deep structural equality |
-| 66 | `DEG` | Angle Mode | 0 | Set degrees mode |
-| 67 | `RAD` | Angle Mode | 0 | Set radians mode |
-| 68 | `GRAD` | Angle Mode | 0 | Set gradians mode |
-| 69 | `SIN` | Transcendental | 1 | Sine |
-| 70 | `COS` | Transcendental | 1 | Cosine |
-| 71 | `TAN` | Transcendental | 1 | Tangent |
-| 72 | `ASIN` | Transcendental | 1 | Inverse sine |
-| 73 | `ACOS` | Transcendental | 1 | Inverse cosine |
-| 74 | `ATAN` | Transcendental | 1 | Inverse tangent |
-| 75 | `ATAN2` | Transcendental | 2 | Two-argument inverse tangent |
-| 76 | `EXP` | Transcendental | 1 | Natural exponential |
-| 77 | `LN` | Transcendental | 1 | Natural logarithm |
-| 78 | `LOG` | Transcendental | 1 | Common logarithm |
-| 79 | `ALOG` | Transcendental | 1 | Common antilogarithm |
-| 80 | `SQRT` | Transcendental | 1 | Square root |
-| 81 | `SQ` | Transcendental | 1 | Square |
-| 82 | `PI` | Constant | 0 | Push π |
-| 83 | `E` | Constant | 0 | Push e |
-| 84 | `FLOOR` | Rounding | 1 | Floor |
-| 85 | `CEIL` | Rounding | 1 | Ceiling |
-| 86 | `IP` | Rounding | 1 | Integer part |
-| 87 | `FP` | Rounding | 1 | Fractional part |
-| 88 | `MIN` | Utility | 2 | Minimum |
-| 89 | `MAX` | Utility | 2 | Maximum |
-| 90 | `SIGN` | Utility | 1 | Sign |
-| 91 | `!` | Combinatorics | 1 | Factorial |
-| 92 | `COMB` | Combinatorics | 2 | Combinations |
-| 93 | `PERM` | Combinatorics | 2 | Permutations |
-| 94 | `%` | Percentage | 2 | Percentage |
-| 95 | `%T` | Percentage | 2 | Percent of total |
-| 96 | `%CH` | Percentage | 2 | Percent change |
-| 97 | `D->R` | Angle Conv | 1 | Degrees to radians |
-| 98 | `R->D` | Angle Conv | 1 | Radians to degrees |
-| 99 | `SIZE` | String/List/Matrix | 1 | Length, element count, or dimensions |
-| 100 | `HEAD` | String/List | 1 | First character or element |
-| 101 | `TAIL` | String/List | 1 | All but first |
-| 102 | `SUB` | String/List | 3 | Substring or sub-list |
-| 103 | `POS` | String/List | 2 | Find position |
-| 104 | `REPL` | String | 3 | Replace first occurrence |
-| 105 | `NUM` | String | 1 | Char to codepoint |
-| 106 | `CHR` | String | 1 | Codepoint to char |
-| 107 | `SUBST` | Symbolic | 3 | Substitute variable in expression |
-| 108 | `STASH` | Symbolic | 1 | Stash one item |
-| 109 | `STASHN` | Symbolic | n+1 | Stash N items as a group |
-| 110 | `UNSTASH` | Symbolic | 0 | Restore most recent stash group |
-| 111 | `EXPLODE` | Symbolic | 1 | Decompose top-level operation |
-| 112 | `ASSEMBLE` | Symbolic | varies | Reassemble from stash groups |
-| 113 | `LIST->` | List | 1 | Explode list with count |
-| 114 | `->LIST` | List | n+1 | Collect N items into list |
-| 115 | `GET` | List/Matrix | 2 | Element access (1-based) |
-| 116 | `PUT` | List/Matrix | 3 | Element replacement (1-based) |
-| 117 | `GETI` | List | 2 | GET with auto-increment |
-| 118 | `PUTI` | List | 3 | PUT with auto-increment |
-| 119 | `ADD` | List | 2 | Append element |
-| 120 | `REVLIST` | List | 1 | Reverse list |
-| 121 | `SORT` | List | 1 | Sort homogeneous list |
-| 122 | `MAP` | List | 2 | Apply program to each element |
-| 123 | `FILTER` | List | 2 | Keep elements passing test |
-| 124 | `STREAM` | List | 2 | Reduce with binary program |
-| 125 | `DOLIST` | List | n+2 | Apply program to N lists |
-| 126 | `SEQ` | List | 4 | Generate list from sequence |
-| 127 | `DOSUBS` | List | 3 | Sliding window application |
-| 128 | `ZIP` | List | n+1 | Transpose N lists |
-| 129 | `UNION` | List | 2 | Set union |
-| 130 | `INTERSECT` | List | 2 | Set intersection |
-| 131 | `DIFFERENCE` | List | 2 | Set difference |
-| 132 | `->V2` | Matrix | 2 | Construct 2D vector |
-| 133 | `->V3` | Matrix | 3 | Construct 3D vector |
-| 134 | `V->` | Matrix | 1 | Explode vector |
-| 135 | `CON` | Matrix | 2 | Constant matrix |
-| 136 | `IDN` | Matrix | 1 | Identity matrix |
-| 137 | `RDM` | Matrix | 2 | Redimension matrix |
-| 138 | `TRN` | Matrix | 1 | Transpose |
-| 139 | `DET` | Matrix | 1 | Determinant |
-| 140 | `CROSS` | Matrix | 2 | Cross product |
-| 141 | `DOT` | Matrix | 2 | Dot product |
+| 41 | `CD` | Filesystem | 1 | Change into subdirectory |
+| 42 | `UPDIR` | Filesystem | 0 | Move up one directory level |
+| 43 | `PGDIR` | Filesystem | 1 | Delete subdirectory tree |
+| 44 | `VARS` | Filesystem | 0 | List directory contents |
+| 45 | `EVAL` | Program | 1 | Evaluate object (program, name, or symbol expression) |
+| 46 | `IFT` | Program | 2 | Conditional (if-then) |
+| 47 | `IFTE` | Program | 3 | Conditional (if-then-else) |
+| 48 | `->` / `→` | Local Binding | *runstream* | Bind stack values to local variables, execute body |
+| 49 | `IF...THEN...END` | Control Flow | *runstream* | Conditional execution |
+| 50 | `CASE...END` | Control Flow | *runstream* | Multi-way branch |
+| 51 | `FOR...NEXT` | Control Flow | 2 + *runstream* | Counted loop with variable |
+| 52 | `FOR...STEP` | Control Flow | 2 + *runstream* | Counted loop with variable and custom step |
+| 53 | `START...NEXT` | Control Flow | 2 + *runstream* | Counted loop |
+| 54 | `START...STEP` | Control Flow | 2 + *runstream* | Counted loop with custom step |
+| 55 | `WHILE...REPEAT...END` | Control Flow | *runstream* | Pre-test loop |
+| 56 | `DO...UNTIL...END` | Control Flow | *runstream* | Post-test loop |
+| 57 | `AND` | Logic | 2 | Boolean AND |
+| 58 | `OR` | Logic | 2 | Boolean OR |
+| 59 | `NOT` | Logic | 1 | Boolean NOT |
+| 60 | `XOR` | Logic | 2 | Boolean XOR |
+| 61 | `BAND` | Bitwise | 2 | Bitwise AND |
+| 62 | `BOR` | Bitwise | 2 | Bitwise OR |
+| 63 | `BXOR` | Bitwise | 2 | Bitwise XOR |
+| 64 | `BNOT` | Bitwise | 1 | Bitwise NOT |
+| 65 | `SL` | Bitwise | 2 | Shift left |
+| 66 | `SR` | Bitwise | 2 | Shift right |
+| 67 | `ASR` | Bitwise | 2 | Arithmetic shift right |
+| 68 | `SAME` | Logic | 2 | Deep structural equality |
+| 69 | `DEG` | Angle Mode | 0 | Set degrees mode |
+| 70 | `RAD` | Angle Mode | 0 | Set radians mode |
+| 71 | `GRAD` | Angle Mode | 0 | Set gradians mode |
+| 72 | `SIN` | Transcendental | 1 | Sine |
+| 73 | `COS` | Transcendental | 1 | Cosine |
+| 74 | `TAN` | Transcendental | 1 | Tangent |
+| 75 | `ASIN` | Transcendental | 1 | Inverse sine |
+| 76 | `ACOS` | Transcendental | 1 | Inverse cosine |
+| 77 | `ATAN` | Transcendental | 1 | Inverse tangent |
+| 78 | `ATAN2` | Transcendental | 2 | Two-argument inverse tangent |
+| 79 | `EXP` | Transcendental | 1 | Natural exponential |
+| 80 | `LN` | Transcendental | 1 | Natural logarithm |
+| 81 | `LOG` | Transcendental | 1 | Common logarithm |
+| 82 | `ALOG` | Transcendental | 1 | Common antilogarithm |
+| 83 | `SQRT` | Transcendental | 1 | Square root |
+| 84 | `SQ` | Transcendental | 1 | Square |
+| 85 | `PI` | Constant | 0 | Push π |
+| 86 | `E` | Constant | 0 | Push e |
+| 87 | `FLOOR` | Rounding | 1 | Floor |
+| 88 | `CEIL` | Rounding | 1 | Ceiling |
+| 89 | `IP` | Rounding | 1 | Integer part |
+| 90 | `FP` | Rounding | 1 | Fractional part |
+| 91 | `MIN` | Utility | 2 | Minimum |
+| 92 | `MAX` | Utility | 2 | Maximum |
+| 93 | `SIGN` | Utility | 1 | Sign |
+| 94 | `!` | Combinatorics | 1 | Factorial |
+| 95 | `COMB` | Combinatorics | 2 | Combinations |
+| 96 | `PERM` | Combinatorics | 2 | Permutations |
+| 97 | `%` | Percentage | 2 | Percentage |
+| 98 | `%T` | Percentage | 2 | Percent of total |
+| 99 | `%CH` | Percentage | 2 | Percent change |
+| 100 | `D->R` | Angle Conv | 1 | Degrees to radians |
+| 101 | `R->D` | Angle Conv | 1 | Radians to degrees |
+| 102 | `SIZE` | String/List/Matrix | 1 | Length, element count, or dimensions |
+| 103 | `HEAD` | String/List | 1 | First character or element |
+| 104 | `TAIL` | String/List | 1 | All but first |
+| 105 | `SUB` | String/List | 3 | Substring or sub-list |
+| 106 | `POS` | String/List | 2 | Find position |
+| 107 | `REPL` | String | 3 | Replace first occurrence |
+| 108 | `NUM` | String | 1 | Char to codepoint |
+| 109 | `CHR` | String | 1 | Codepoint to char |
+| 110 | `SUBST` | Symbolic | 3 | Substitute variable in expression |
+| 111 | `STASH` | Symbolic | 1 | Stash one item |
+| 112 | `STASHN` | Symbolic | n+1 | Stash N items as a group |
+| 113 | `UNSTASH` | Symbolic | 0 | Restore most recent stash group |
+| 114 | `EXPLODE` | Symbolic | 1 | Decompose top-level operation |
+| 115 | `ASSEMBLE` | Symbolic | varies | Reassemble from stash groups |
+| 116 | `LIST->` | List | 1 | Explode list with count |
+| 117 | `->LIST` | List | n+1 | Collect N items into list |
+| 118 | `GET` | List/Matrix | 2 | Element access (1-based) |
+| 119 | `PUT` | List/Matrix | 3 | Element replacement (1-based) |
+| 120 | `GETI` | List | 2 | GET with auto-increment |
+| 121 | `PUTI` | List | 3 | PUT with auto-increment |
+| 122 | `ADD` | List | 2 | Append element |
+| 123 | `REVLIST` | List | 1 | Reverse list |
+| 124 | `SORT` | List | 1 | Sort homogeneous list |
+| 125 | `MAP` | List | 2 | Apply program to each element |
+| 126 | `FILTER` | List | 2 | Keep elements passing test |
+| 127 | `STREAM` | List | 2 | Reduce with binary program |
+| 128 | `DOLIST` | List | n+2 | Apply program to N lists |
+| 129 | `SEQ` | List | 4 | Generate list from sequence |
+| 130 | `DOSUBS` | List | 3 | Sliding window application |
+| 131 | `ZIP` | List | n+1 | Transpose N lists |
+| 132 | `UNION` | List | 2 | Set union |
+| 133 | `INTERSECT` | List | 2 | Set intersection |
+| 134 | `DIFFERENCE` | List | 2 | Set difference |
+| 135 | `->V2` | Matrix | 2 | Construct 2D vector |
+| 136 | `->V3` | Matrix | 3 | Construct 3D vector |
+| 137 | `V->` | Matrix | 1 | Explode vector |
+| 138 | `CON` | Matrix | 2 | Constant matrix |
+| 139 | `IDN` | Matrix | 1 | Identity matrix |
+| 140 | `RDM` | Matrix | 2 | Redimension matrix |
+| 141 | `TRN` | Matrix | 1 | Transpose |
+| 142 | `DET` | Matrix | 1 | Determinant |
+| 143 | `CROSS` | Matrix | 2 | Cross product |
+| 144 | `DOT` | Matrix | 2 | Dot product |

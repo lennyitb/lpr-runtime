@@ -405,6 +405,87 @@ int Store::find_directory(int parent_id, const std::string& name) {
     return id;
 }
 
+int Store::parent_dir_id(int dir_id) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT parent_id FROM directories WHERE id = ?", -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, dir_id);
+    int id = -1;
+    if (sqlite3_step(stmt) == SQLITE_ROW && sqlite3_column_type(stmt, 0) != SQLITE_NULL) {
+        id = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return id;
+}
+
+std::string Store::dir_name(int dir_id) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT name FROM directories WHERE id = ?", -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, dir_id);
+    std::string name;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+    return name;
+}
+
+std::string Store::dir_path(int dir_id) {
+    std::vector<std::string> parts;
+    int cur = dir_id;
+    while (cur != -1) {
+        parts.push_back(dir_name(cur));
+        cur = parent_dir_id(cur);
+    }
+    std::string path;
+    for (int i = static_cast<int>(parts.size()) - 1; i >= 0; --i) {
+        if (!path.empty()) path += "/";
+        path += parts[i];
+    }
+    return path;
+}
+
+std::vector<std::string> Store::list_subdirectories(int dir_id) {
+    std::vector<std::string> result;
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT name FROM directories WHERE parent_id = ? ORDER BY name", -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, dir_id);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        result.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void Store::purge_directory_tree(int dir_id) {
+    // Recursively purge child directories first
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT id FROM directories WHERE parent_id = ?", -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, dir_id);
+    std::vector<int> children;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        children.push_back(sqlite3_column_int(stmt, 0));
+    }
+    sqlite3_finalize(stmt);
+
+    for (int child : children) {
+        purge_directory_tree(child);
+    }
+
+    // Delete variables in this directory
+    sqlite3_stmt* del_vars = nullptr;
+    sqlite3_prepare_v2(db_, "DELETE FROM variables WHERE dir_id = ?", -1, &del_vars, nullptr);
+    sqlite3_bind_int(del_vars, 1, dir_id);
+    sqlite3_step(del_vars);
+    sqlite3_finalize(del_vars);
+
+    // Delete the directory itself
+    sqlite3_stmt* del_dir = nullptr;
+    sqlite3_prepare_v2(db_, "DELETE FROM directories WHERE id = ?", -1, &del_dir, nullptr);
+    sqlite3_bind_int(del_dir, 1, dir_id);
+    sqlite3_step(del_dir);
+    sqlite3_finalize(del_dir);
+}
+
 // --- Transactions ---
 
 void Store::begin() { exec_sql("BEGIN"); }

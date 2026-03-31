@@ -360,7 +360,7 @@ lpr-runtime/
 │   │   ├── transcendental.cpp  # SIN COS TAN EXP LN SQRT
 │   │   ├── type_conv.cpp       # →NUM →Q →STR TYPE
 │   │   ├── program_ctrl.cpp    # EVAL IFT IFTE
-│   │   └── filesystem.cpp      # STO RCL PURGE CRDIR PATH HOME VARS
+│   │   └── filesystem.cpp      # STO RCL PURGE CRDIR CD UPDIR PGDIR PATH HOME VARS
 │   └── cas/
 │       ├── bridge.hpp          # Abstract CASBridge interface
 │       └── symengine_backend.cpp
