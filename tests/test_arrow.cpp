@@ -31,7 +31,7 @@ TEST_CASE("Parser recognizes UTF-8 arrow as command inside program", "[arrow][pa
     // Tokens should be: → X Y <program>
     REQUIRE(prog.tokens.size() == 4);
     REQUIRE(prog.tokens[0].kind == Token::Command);
-    // UTF-8 arrow command (uppercased bytes stay the same)
+    // UTF-8 arrow command (case preserved)
     REQUIRE(prog.tokens[0].command == "\xe2\x86\x92");
     REQUIRE(prog.tokens[3].kind == Token::Literal);
     REQUIRE(std::holds_alternative<Program>(prog.tokens[3].literal));

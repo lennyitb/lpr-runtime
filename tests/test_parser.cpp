@@ -76,12 +76,12 @@ TEST_CASE("Parse nested programs", "[parser]") {
     REQUIRE(std::holds_alternative<Program>(prog.tokens[1].literal));
 }
 
-TEST_CASE("Parse command names are uppercased", "[parser]") {
+TEST_CASE("Parse command names preserve case", "[parser]") {
     auto tokens = parse("dup swap");
     REQUIRE(tokens.size() == 2);
     REQUIRE(tokens[0].kind == Token::Command);
-    REQUIRE(tokens[0].command == "DUP");
-    REQUIRE(tokens[1].command == "SWAP");
+    REQUIRE(tokens[0].command == "dup");
+    REQUIRE(tokens[1].command == "swap");
 }
 
 TEST_CASE("Parse simple expression", "[parser]") {

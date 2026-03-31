@@ -172,11 +172,17 @@ void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
 }
 
 bool CommandRegistry::has(const std::string& name) const {
-    return commands_.count(name) > 0;
+    std::string upper = name;
+    std::transform(upper.begin(), upper.end(), upper.begin(),
+        [](unsigned char c) { return std::toupper(c); });
+    return commands_.count(upper) > 0;
 }
 
 void CommandRegistry::execute(const std::string& name, Store& store, Context& ctx) const {
-    auto it = commands_.find(name);
+    std::string upper = name;
+    std::transform(upper.begin(), upper.end(), upper.begin(),
+        [](unsigned char c) { return std::toupper(c); });
+    auto it = commands_.find(upper);
     if (it == commands_.end()) {
         store.push(Error{4, "Unknown command: " + name});
         throw std::runtime_error("Unknown command: " + name);

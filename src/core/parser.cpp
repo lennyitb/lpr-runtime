@@ -1,7 +1,5 @@
 #include "core/parser.hpp"
 #include <cctype>
-#include <stdexcept>
-#include <algorithm>
 
 namespace lpr {
 
@@ -224,11 +222,7 @@ std::vector<Token> parse(const std::string& input) {
         } else if (is_real(word)) {
             tokens.push_back(Token::make_literal(Real(word)));
         } else {
-            // Uppercase the command name for case-insensitive matching
-            std::string upper = word;
-            std::transform(upper.begin(), upper.end(), upper.begin(),
-                [](unsigned char c) { return std::toupper(c); });
-            tokens.push_back(Token::make_command(upper));
+            tokens.push_back(Token::make_command(word));
         }
     }
 

@@ -303,16 +303,12 @@ Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
                 stack.push_back(Integer(s));
             }
         } else if (tok.type == ExprTokenType::Name) {
-            // Resolve variable: locals first, then global store
+            // Resolve variable: locals first, then global store (case-sensitive)
             auto local = ctx.resolve_local(tok.value);
             if (local.has_value()) {
                 stack.push_back(*local);
             } else {
-                // Try uppercased name for global store lookup
-                std::string upper = tok.value;
-                std::transform(upper.begin(), upper.end(), upper.begin(),
-                    [](unsigned char c) { return std::toupper(c); });
-                Object val = ctx.store().recall_variable(ctx.store().current_dir(), upper);
+                Object val = ctx.store().recall_variable(ctx.store().current_dir(), tok.value);
                 if (std::holds_alternative<Error>(val)) {
                     throw std::runtime_error("Undefined variable: " + tok.value);
                 }
