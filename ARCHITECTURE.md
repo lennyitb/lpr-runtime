@@ -106,6 +106,12 @@ this is a `std::variant` over the following types:
 | `Program`   | `std::vector<Token>`                      | `« DUP * »`            |
 | `Name`      | `std::string`                             | `'myvar'`               |
 | `Error`     | `int code` + `std::string message`        | (pushed on failure)     |
+| `List`      | `std::vector<Object>`                     | `{ 1 2 3 }`            |
+| `Matrix`    | `std::vector<std::vector<Object>>`        | `[[ 1 2 ][ 3 4 ]]`    |
+
+`Object` is a struct inheriting from `std::variant` (forward-declarable), enabling self-referential compound types: `List` contains `std::vector<Object>`, `Matrix` contains `std::vector<std::vector<Object>>`. Both use heap storage via `std::vector`, so the variant size stays bounded.
+
+Lists are heterogeneous (any `Object` as element, including nested lists). Matrices are restricted to numeric and symbolic elements, validated at parse time and on `PUT`.
 
 ### Type Promotion Rules
 

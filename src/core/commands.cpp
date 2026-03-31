@@ -165,6 +165,8 @@ CommandRegistry::CommandRegistry() {
     register_transcendental_commands();
     register_string_commands();
     register_symbolic_commands();
+    register_list_commands();
+    register_matrix_commands();
 }
 
 void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
@@ -390,14 +392,101 @@ void CommandRegistry::register_stack_commands() {
     });
 }
 
+// ---- Arithmetic helpers for compound types ----
+
+namespace {
+
+// Element-wise binary op on two lists of matching length
+void list_elementwise(Store& s, Context& ctx, const List& a, const List& b, const std::string& op, CommandRegistry& cmds) {
+    if (a.items.size() != b.items.size())
+        throw std::runtime_error("Lists must have same length");
+    List result;
+    for (size_t i = 0; i < a.items.size(); ++i) {
+        s.push(a.items[i]);
+        s.push(b.items[i]);
+        cmds.execute(op, s, ctx);
+        result.items.push_back(s.pop());
+    }
+    s.push(std::move(result));
+}
+
+// Scalar broadcast: apply op(scalar, elem) or op(elem, scalar) for each element
+void list_scalar_op(Store& s, Context& ctx, const List& lst, const Object& scalar, const std::string& op, bool scalar_first, CommandRegistry& cmds) {
+    List result;
+    for (auto& item : lst.items) {
+        if (scalar_first) { s.push(scalar); s.push(item); }
+        else              { s.push(item); s.push(scalar); }
+        cmds.execute(op, s, ctx);
+        result.items.push_back(s.pop());
+    }
+    s.push(std::move(result));
+}
+
+// Element-wise binary op on two matrices of matching dimensions
+void matrix_elementwise(Store& s, Context& ctx, const Matrix& a, const Matrix& b, const std::string& op, CommandRegistry& cmds) {
+    if (a.rows.size() != b.rows.size())
+        throw std::runtime_error("Matrix dimensions must match");
+    if (!a.rows.empty() && a.rows[0].size() != b.rows[0].size())
+        throw std::runtime_error("Matrix dimensions must match");
+    Matrix result;
+    for (size_t r = 0; r < a.rows.size(); ++r) {
+        std::vector<Object> row;
+        for (size_t c = 0; c < a.rows[r].size(); ++c) {
+            s.push(a.rows[r][c]);
+            s.push(b.rows[r][c]);
+            cmds.execute(op, s, ctx);
+            row.push_back(s.pop());
+        }
+        result.rows.push_back(std::move(row));
+    }
+    s.push(std::move(result));
+}
+
+// Scalar * Matrix / Matrix * Scalar
+void matrix_scalar_op(Store& s, Context& ctx, const Matrix& mat, const Object& scalar, const std::string& op, bool scalar_first, CommandRegistry& cmds) {
+    Matrix result;
+    for (auto& row : mat.rows) {
+        std::vector<Object> rrow;
+        for (auto& elem : row) {
+            if (scalar_first) { s.push(scalar); s.push(elem); }
+            else              { s.push(elem); s.push(scalar); }
+            cmds.execute(op, s, ctx);
+            rrow.push_back(s.pop());
+        }
+        result.rows.push_back(std::move(rrow));
+    }
+    s.push(std::move(result));
+}
+
+} // anonymous namespace
+
 // ---- Arithmetic Commands ----
 
 void CommandRegistry::register_arithmetic_commands() {
     // +
-    register_command("+", [](Store& s, Context&) {
+    register_command("+", [this](Store& s, Context& ctx) {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop();
         Object a = s.pop();
+        // List + List (element-wise)
+        if (std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_elementwise(s, ctx, std::get<List>(a), std::get<List>(b), "+", *this);
+            return;
+        }
+        // Scalar + List / List + Scalar
+        if (std::holds_alternative<List>(a) && !std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(a), b, "+", false, *this);
+            return;
+        }
+        if (!std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(b), a, "+", true, *this);
+            return;
+        }
+        // Matrix + Matrix (element-wise)
+        if (std::holds_alternative<Matrix>(a) && std::holds_alternative<Matrix>(b)) {
+            matrix_elementwise(s, ctx, std::get<Matrix>(a), std::get<Matrix>(b), "+", *this);
+            return;
+        }
         // String concatenation
         if (std::holds_alternative<String>(a) && std::holds_alternative<String>(b)) {
             s.push(String{std::get<String>(a).value + std::get<String>(b).value});
@@ -422,10 +511,29 @@ void CommandRegistry::register_arithmetic_commands() {
     });
 
     // -
-    register_command("-", [](Store& s, Context&) {
+    register_command("-", [this](Store& s, Context& ctx) {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop(); // level 1
         Object a = s.pop(); // level 2
+        // List - List (element-wise)
+        if (std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_elementwise(s, ctx, std::get<List>(a), std::get<List>(b), "-", *this);
+            return;
+        }
+        // Scalar - List / List - Scalar
+        if (std::holds_alternative<List>(a) && !std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(a), b, "-", false, *this);
+            return;
+        }
+        if (!std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(b), a, "-", true, *this);
+            return;
+        }
+        // Matrix - Matrix (element-wise)
+        if (std::holds_alternative<Matrix>(a) && std::holds_alternative<Matrix>(b)) {
+            matrix_elementwise(s, ctx, std::get<Matrix>(a), std::get<Matrix>(b), "-", *this);
+            return;
+        }
         if (is_symbolic(a) || is_symbolic(b)) {
             s.push(symbolic_binary(a, b, "-"));
             return;
@@ -441,10 +549,84 @@ void CommandRegistry::register_arithmetic_commands() {
     });
 
     // *
-    register_command("*", [](Store& s, Context&) {
+    register_command("*", [this](Store& s, Context& ctx) {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop();
         Object a = s.pop();
+        // List * List (element-wise)
+        if (std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_elementwise(s, ctx, std::get<List>(a), std::get<List>(b), "*", *this);
+            return;
+        }
+        // Scalar * List / List * Scalar
+        if (std::holds_alternative<List>(a) && !std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(a), b, "*", false, *this);
+            return;
+        }
+        if (!std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(b), a, "*", true, *this);
+            return;
+        }
+        // Matrix * Matrix (true matrix multiplication)
+        if (std::holds_alternative<Matrix>(a) && std::holds_alternative<Matrix>(b)) {
+            auto& ar = std::get<Matrix>(a).rows;
+            auto& br = std::get<Matrix>(b).rows;
+            // Check if b is a vector (1-row) and a is a matrix — treat as matrix*vector
+            int a_rows = static_cast<int>(ar.size());
+            int a_cols = ar.empty() ? 0 : static_cast<int>(ar[0].size());
+            int b_rows = static_cast<int>(br.size());
+            int b_cols = br.empty() ? 0 : static_cast<int>(br[0].size());
+            // For matrix multiplication: a_cols must equal b_rows
+            // For matrix*vector: b is 1-row, treat as column vector (b_cols elements)
+            if (b_rows == 1 && a_cols == b_cols) {
+                // Matrix * vector → vector
+                Matrix result;
+                std::vector<Object> rv;
+                for (int r = 0; r < a_rows; ++r) {
+                    Object sum = Integer(0);
+                    for (int c = 0; c < a_cols; ++c) {
+                        s.push(ar[r][c]); s.push(br[0][c]);
+                        this->execute("*", s, ctx);
+                        s.push(sum); s.push(s.pop());
+                        this->execute("+", s, ctx);
+                        sum = s.pop();
+                    }
+                    rv.push_back(std::move(sum));
+                }
+                result.rows.push_back(std::move(rv));
+                s.push(std::move(result));
+                return;
+            }
+            if (a_cols != b_rows)
+                throw std::runtime_error("Matrix dimensions incompatible for multiplication");
+            Matrix result;
+            for (int r = 0; r < a_rows; ++r) {
+                std::vector<Object> row;
+                for (int c = 0; c < b_cols; ++c) {
+                    Object sum = Integer(0);
+                    for (int k = 0; k < a_cols; ++k) {
+                        s.push(ar[r][k]); s.push(br[k][c]);
+                        this->execute("*", s, ctx);
+                        s.push(sum); s.push(s.pop());
+                        this->execute("+", s, ctx);
+                        sum = s.pop();
+                    }
+                    row.push_back(std::move(sum));
+                }
+                result.rows.push_back(std::move(row));
+            }
+            s.push(std::move(result));
+            return;
+        }
+        // Scalar * Matrix / Matrix * Scalar
+        if (std::holds_alternative<Matrix>(a) && !std::holds_alternative<Matrix>(b)) {
+            matrix_scalar_op(s, ctx, std::get<Matrix>(a), b, "*", false, *this);
+            return;
+        }
+        if (!std::holds_alternative<Matrix>(a) && std::holds_alternative<Matrix>(b)) {
+            matrix_scalar_op(s, ctx, std::get<Matrix>(b), a, "*", true, *this);
+            return;
+        }
         if (is_symbolic(a) || is_symbolic(b)) {
             s.push(symbolic_binary(a, b, "*"));
             return;
@@ -461,11 +643,21 @@ void CommandRegistry::register_arithmetic_commands() {
     });
 
     // /
-    register_command("/", [](Store& s, Context&) {
+    register_command("/", [this](Store& s, Context& ctx) {
         if (s.depth() < 2) throw std::runtime_error("Too few arguments");
         Object b = s.pop(); // divisor (level 1)
         Object a = s.pop(); // dividend (level 2)
 
+        // List / List (element-wise)
+        if (std::holds_alternative<List>(a) && std::holds_alternative<List>(b)) {
+            list_elementwise(s, ctx, std::get<List>(a), std::get<List>(b), "/", *this);
+            return;
+        }
+        // List / Scalar
+        if (std::holds_alternative<List>(a) && !std::holds_alternative<List>(b)) {
+            list_scalar_op(s, ctx, std::get<List>(a), b, "/", false, *this);
+            return;
+        }
         if (is_symbolic(a) || is_symbolic(b)) {
             s.push(symbolic_binary(a, b, "/"));
             return;
@@ -495,12 +687,37 @@ void CommandRegistry::register_arithmetic_commands() {
     });
 
     // NEG
-    register_command("NEG", [](Store& s, Context&) {
+    register_command("NEG", [this](Store& s, Context& ctx) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        // NEG on list: negate each element
+        if (std::holds_alternative<List>(a)) {
+            List result;
+            for (auto& item : std::get<List>(a).items) {
+                s.push(item);
+                this->execute("NEG", s, ctx);
+                result.items.push_back(s.pop());
+            }
+            s.push(std::move(result));
+            return;
+        }
+        // NEG on matrix: negate each element
+        if (std::holds_alternative<Matrix>(a)) {
+            Matrix result;
+            for (auto& row : std::get<Matrix>(a).rows) {
+                std::vector<Object> rrow;
+                for (auto& elem : row) {
+                    s.push(elem);
+                    this->execute("NEG", s, ctx);
+                    rrow.push_back(s.pop());
+                }
+                result.rows.push_back(std::move(rrow));
+            }
+            s.push(std::move(result));
+            return;
+        }
         if (is_symbolic(a)) {
             std::string sa = to_expr_string(a);
-            // Always wrap in parens for negation to be unambiguous
             s.push(Symbol{"-("+sa+")"});
             return;
         }
@@ -518,13 +735,63 @@ void CommandRegistry::register_arithmetic_commands() {
                 s.push(Error{10, "Bad argument type"});
                 throw std::runtime_error("Bad argument type");
             }
-        }, a);
+        }, a.as_variant());
     });
 
-    // INV (1/x)
+    // INV (1/x or matrix inverse)
     register_command("INV", [](Store& s, Context&) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        // Matrix inverse
+        if (std::holds_alternative<Matrix>(a)) {
+            auto& rows = std::get<Matrix>(a).rows;
+            int n = static_cast<int>(rows.size());
+            if (n == 0 || static_cast<int>(rows[0].size()) != n) {
+                s.push(a);
+                throw std::runtime_error("INV requires a square matrix");
+            }
+            for (auto& row : rows)
+                for (auto& elem : row)
+                    if (!is_numeric(elem)) {
+                        s.push(a);
+                        throw std::runtime_error("INV requires numeric matrix");
+                    }
+            // Gauss-Jordan elimination on [A | I]
+            std::vector<std::vector<Real>> aug(n, std::vector<Real>(2 * n, Real(0)));
+            for (int r = 0; r < n; ++r) {
+                for (int c = 0; c < n; ++c)
+                    aug[r][c] = to_real_value(rows[r][c]);
+                aug[r][n + r] = Real(1);
+            }
+            for (int col = 0; col < n; ++col) {
+                int pivot = -1;
+                Real max_val = 0;
+                for (int r = col; r < n; ++r) {
+                    Real abs_val = aug[r][col] < 0 ? -aug[r][col] : aug[r][col];
+                    if (abs_val > max_val) { max_val = abs_val; pivot = r; }
+                }
+                if (pivot < 0 || max_val == 0) {
+                    s.push(a);
+                    throw std::runtime_error("Singular matrix");
+                }
+                if (pivot != col) std::swap(aug[col], aug[pivot]);
+                Real scale = aug[col][col];
+                for (int c = 0; c < 2 * n; ++c) aug[col][c] /= scale;
+                for (int r = 0; r < n; ++r) {
+                    if (r == col) continue;
+                    Real factor = aug[r][col];
+                    for (int c = 0; c < 2 * n; ++c) aug[r][c] -= factor * aug[col][c];
+                }
+            }
+            Matrix result;
+            for (int r = 0; r < n; ++r) {
+                std::vector<Object> row;
+                for (int c = 0; c < n; ++c) row.push_back(aug[r][n + c]);
+                result.rows.push_back(std::move(row));
+            }
+            s.push(std::move(result));
+            return;
+        }
         if (is_symbolic(a)) {
             s.push(symbolic_func("INV", {a}));
             return;
@@ -566,9 +833,25 @@ void CommandRegistry::register_arithmetic_commands() {
     });
 
     // ABS
-    register_command("ABS", [](Store& s, Context&) {
+    register_command("ABS", [this](Store& s, Context& ctx) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
+        // ABS on vector: Euclidean norm (numeric only)
+        if (std::holds_alternative<Matrix>(a)) {
+            auto& rows = std::get<Matrix>(a).rows;
+            if (rows.size() != 1)
+                throw std::runtime_error("ABS requires a vector (1-row matrix)");
+            for (auto& elem : rows[0])
+                if (!is_numeric(elem))
+                    throw std::runtime_error("ABS on vector requires numeric elements");
+            Real sum(0);
+            for (auto& elem : rows[0]) {
+                Real v = to_real_value(elem);
+                sum += v * v;
+            }
+            s.push(boost::multiprecision::sqrt(sum));
+            return;
+        }
         if (is_symbolic(a)) {
             s.push(symbolic_func("ABS", {a}));
             return;
@@ -1084,7 +1367,7 @@ void CommandRegistry::register_logic_commands() {
                     // Programs are same if their repr matches
                     same = (repr(Object(va)) == repr(Object(vb)));
                 }
-            }, a);
+            }, a.as_variant());
         }
         s.push(Integer(same ? 1 : 0));
     });
@@ -1850,6 +2133,853 @@ void CommandRegistry::register_symbolic_commands() {
             }
         }
     });
+}
+
+// ---- List Commands ----
+
+void CommandRegistry::register_list_commands() {
+    // LIST-> : explode list onto stack with count
+    auto list_to = [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& items = std::get<List>(a).items;
+        for (auto& item : items) s.push(item);
+        s.push(Integer(static_cast<int>(items.size())));
+    };
+    register_command("LIST\xe2\x86\x92", list_to);
+    register_command("LIST->", list_to);
+
+    // ->LIST : collect N items from stack into list
+    auto to_list = [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 0 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        List list;
+        list.items.resize(n);
+        for (int i = n - 1; i >= 0; --i) list.items[i] = s.pop();
+        s.push(std::move(list));
+    };
+    register_command("\xe2\x86\x92LIST", to_list);
+    register_command("->LIST", to_list);
+
+    // GET : 1-based element access
+    register_command("GET", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object idx_obj = s.pop();
+        Object obj = s.pop();
+
+        if (std::holds_alternative<List>(obj)) {
+            if (!std::holds_alternative<Integer>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            int idx = static_cast<int>(std::get<Integer>(idx_obj));
+            auto& items = std::get<List>(obj).items;
+            if (idx < 1 || idx > static_cast<int>(items.size())) {
+                s.push(obj); s.push(idx_obj);
+                throw std::runtime_error("Index out of range");
+            }
+            s.push(items[idx - 1]);
+        } else if (std::holds_alternative<Matrix>(obj)) {
+            // Matrix GET expects { row col } list as index
+            if (!std::holds_alternative<List>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            auto& idx_list = std::get<List>(idx_obj).items;
+            if (idx_list.size() != 2 ||
+                !std::holds_alternative<Integer>(idx_list[0]) ||
+                !std::holds_alternative<Integer>(idx_list[1]))
+                throw std::runtime_error("Bad argument type");
+            int r = static_cast<int>(std::get<Integer>(idx_list[0]));
+            int c = static_cast<int>(std::get<Integer>(idx_list[1]));
+            auto& rows = std::get<Matrix>(obj).rows;
+            if (r < 1 || r > static_cast<int>(rows.size()) ||
+                c < 1 || c > static_cast<int>(rows[0].size())) {
+                s.push(obj); s.push(idx_obj);
+                throw std::runtime_error("Index out of range");
+            }
+            s.push(rows[r - 1][c - 1]);
+        } else {
+            s.push(obj); s.push(idx_obj);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // PUT : 1-based element replacement
+    register_command("PUT", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object val = s.pop();
+        Object idx_obj = s.pop();
+        Object obj = s.pop();
+
+        if (std::holds_alternative<List>(obj)) {
+            if (!std::holds_alternative<Integer>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            int idx = static_cast<int>(std::get<Integer>(idx_obj));
+            auto list = std::get<List>(obj);
+            if (idx < 1 || idx > static_cast<int>(list.items.size())) {
+                s.push(obj); s.push(idx_obj); s.push(val);
+                throw std::runtime_error("Index out of range");
+            }
+            list.items[idx - 1] = val;
+            s.push(std::move(list));
+        } else if (std::holds_alternative<Matrix>(obj)) {
+            if (!std::holds_alternative<List>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            auto& idx_list = std::get<List>(idx_obj).items;
+            if (idx_list.size() != 2 ||
+                !std::holds_alternative<Integer>(idx_list[0]) ||
+                !std::holds_alternative<Integer>(idx_list[1]))
+                throw std::runtime_error("Bad argument type");
+            // Validate element type for matrix
+            if (!is_numeric(val) && !is_symbolic(val)) {
+                s.push(obj); s.push(idx_obj); s.push(val);
+                throw std::runtime_error("Invalid matrix element type");
+            }
+            int r = static_cast<int>(std::get<Integer>(idx_list[0]));
+            int c = static_cast<int>(std::get<Integer>(idx_list[1]));
+            auto mat = std::get<Matrix>(obj);
+            if (r < 1 || r > static_cast<int>(mat.rows.size()) ||
+                c < 1 || c > static_cast<int>(mat.rows[0].size())) {
+                s.push(obj); s.push(idx_obj); s.push(val);
+                throw std::runtime_error("Index out of range");
+            }
+            mat.rows[r - 1][c - 1] = val;
+            s.push(std::move(mat));
+        } else {
+            s.push(obj); s.push(idx_obj); s.push(val);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // GETI : GET with auto-incremented index
+    register_command("GETI", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object idx_obj = s.pop();
+        Object obj = s.pop();
+
+        if (std::holds_alternative<List>(obj)) {
+            if (!std::holds_alternative<Integer>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            int idx = static_cast<int>(std::get<Integer>(idx_obj));
+            auto& items = std::get<List>(obj).items;
+            if (idx < 1 || idx > static_cast<int>(items.size())) {
+                s.push(obj); s.push(idx_obj);
+                throw std::runtime_error("Index out of range");
+            }
+            s.push(obj);
+            int next_idx = (idx < static_cast<int>(items.size())) ? idx + 1 : 1;
+            s.push(Integer(next_idx));
+            s.push(items[idx - 1]);
+        } else {
+            s.push(obj); s.push(idx_obj);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // PUTI : PUT with auto-incremented index
+    register_command("PUTI", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object val = s.pop();
+        Object idx_obj = s.pop();
+        Object obj = s.pop();
+
+        if (std::holds_alternative<List>(obj)) {
+            if (!std::holds_alternative<Integer>(idx_obj))
+                throw std::runtime_error("Bad argument type");
+            int idx = static_cast<int>(std::get<Integer>(idx_obj));
+            auto list = std::get<List>(obj);
+            if (idx < 1 || idx > static_cast<int>(list.items.size())) {
+                s.push(obj); s.push(idx_obj); s.push(val);
+                throw std::runtime_error("Index out of range");
+            }
+            list.items[idx - 1] = val;
+            int next_idx = (idx < static_cast<int>(list.items.size())) ? idx + 1 : 1;
+            s.push(std::move(list));
+            s.push(Integer(next_idx));
+        } else {
+            s.push(obj); s.push(idx_obj); s.push(val);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // HEAD : first element (list) or first char (string)
+    register_command("HEAD", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<List>(a)) {
+            auto& items = std::get<List>(a).items;
+            if (items.empty()) throw std::runtime_error("Empty list");
+            s.push(items[0]);
+        } else if (std::holds_alternative<String>(a)) {
+            auto& str = std::get<String>(a).value;
+            if (str.empty()) throw std::runtime_error("Bad argument value");
+            s.push(String{str.substr(0, 1)});
+        } else {
+            s.push(a);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // TAIL : all but first element (list) or all but first char (string)
+    register_command("TAIL", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<List>(a)) {
+            auto& items = std::get<List>(a).items;
+            if (items.empty()) throw std::runtime_error("Empty list");
+            List result;
+            result.items.assign(items.begin() + 1, items.end());
+            s.push(std::move(result));
+        } else if (std::holds_alternative<String>(a)) {
+            auto& str = std::get<String>(a).value;
+            if (str.empty()) throw std::runtime_error("Bad argument value");
+            s.push(String{str.substr(1)});
+        } else {
+            s.push(a);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // SIZE : element count (list), {rows, cols} (matrix), or char count (string)
+    register_command("SIZE", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (std::holds_alternative<List>(a)) {
+            s.push(Integer(static_cast<int>(std::get<List>(a).items.size())));
+        } else if (std::holds_alternative<Matrix>(a)) {
+            auto& rows = std::get<Matrix>(a).rows;
+            List dims;
+            dims.items.push_back(Integer(static_cast<int>(rows.size())));
+            dims.items.push_back(Integer(rows.empty() ? 0 : static_cast<int>(rows[0].size())));
+            s.push(std::move(dims));
+        } else if (std::holds_alternative<String>(a)) {
+            s.push(Integer(static_cast<int>(std::get<String>(a).value.size())));
+        } else {
+            s.push(a);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // POS : find element in list (or substring in string), return 1-based index or 0
+    register_command("POS", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object needle = s.pop();
+        Object a = s.pop();
+        if (std::holds_alternative<List>(a)) {
+            auto& items = std::get<List>(a).items;
+            for (size_t i = 0; i < items.size(); ++i) {
+                if (repr(items[i]) == repr(needle)) {
+                    s.push(Integer(static_cast<int>(i + 1)));
+                    return;
+                }
+            }
+            s.push(Integer(0));
+        } else if (std::holds_alternative<String>(a) && std::holds_alternative<String>(needle)) {
+            auto& str = std::get<String>(a).value;
+            auto& search = std::get<String>(needle).value;
+            auto pos = str.find(search);
+            s.push(Integer(pos == std::string::npos ? 0 : static_cast<int>(pos) + 1));
+        } else {
+            s.push(a); s.push(needle);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // SUB : sub-list (or substring) by 1-based start/end indices
+    register_command("SUB", [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object end_obj = s.pop();
+        Object start_obj = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Integer>(start_obj) ||
+            !std::holds_alternative<Integer>(end_obj)) {
+            s.push(a); s.push(start_obj); s.push(end_obj);
+            throw std::runtime_error("Bad argument type");
+        }
+        int start = static_cast<int>(std::get<Integer>(start_obj));
+        int end = static_cast<int>(std::get<Integer>(end_obj));
+        if (std::holds_alternative<List>(a)) {
+            auto& items = std::get<List>(a).items;
+            int sz = static_cast<int>(items.size());
+            if (start < 1) start = 1;
+            if (end > sz) end = sz;
+            List result;
+            if (start <= end) {
+                result.items.assign(items.begin() + start - 1, items.begin() + end);
+            }
+            s.push(std::move(result));
+        } else if (std::holds_alternative<String>(a)) {
+            auto& str = std::get<String>(a).value;
+            if (start < 1) start = 1;
+            if (end > static_cast<int>(str.size())) end = static_cast<int>(str.size());
+            if (start > end) {
+                s.push(String{""});
+            } else {
+                s.push(String{str.substr(start - 1, end - start + 1)});
+            }
+        } else {
+            s.push(a); s.push(start_obj); s.push(end_obj);
+            throw std::runtime_error("Bad argument type");
+        }
+    });
+
+    // REVLIST : reverse list
+    register_command("REVLIST", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a))
+            throw std::runtime_error("Bad argument type");
+        auto list = std::get<List>(a);
+        std::reverse(list.items.begin(), list.items.end());
+        s.push(std::move(list));
+    });
+
+    // SORT : sort list of homogeneous numeric/string elements
+    register_command("SORT", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a))
+            throw std::runtime_error("Bad argument type");
+        auto list = std::get<List>(a);
+        if (list.items.empty()) { s.push(std::move(list)); return; }
+        // Check if all items are the same numeric or string type
+        bool all_string = true;
+        bool all_numeric = true;
+        for (auto& item : list.items) {
+            if (!std::holds_alternative<String>(item)) all_string = false;
+            if (!is_numeric(item)) all_numeric = false;
+        }
+        if (!all_string && !all_numeric)
+            throw std::runtime_error("SORT requires homogeneous numeric or string list");
+        if (all_string) {
+            std::sort(list.items.begin(), list.items.end(),
+                [](const Object& x, const Object& y) {
+                    return std::get<String>(x).value < std::get<String>(y).value;
+                });
+        } else {
+            std::sort(list.items.begin(), list.items.end(),
+                [](const Object& x, const Object& y) {
+                    return to_real_value(x) < to_real_value(y);
+                });
+        }
+        s.push(std::move(list));
+    });
+
+    // ADD : append element to list
+    register_command("ADD", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object elem = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a))
+            throw std::runtime_error("Bad argument type");
+        auto list = std::get<List>(a);
+        list.items.push_back(std::move(elem));
+        s.push(std::move(list));
+    });
+
+    // --- Higher-order ---
+
+    // DOLIST : apply program to corresponding elements of N lists
+    register_command("DOLIST", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj))
+            throw std::runtime_error("Bad argument type");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+
+        std::vector<List> lists(n);
+        for (int i = n - 1; i >= 0; --i) {
+            Object lobj = s.pop();
+            if (!std::holds_alternative<List>(lobj))
+                throw std::runtime_error("Bad argument type");
+            lists[i] = std::get<List>(std::move(lobj));
+        }
+        size_t len = lists[0].items.size();
+        for (int i = 1; i < n; ++i) {
+            if (lists[i].items.size() != len)
+                throw std::runtime_error("Lists must have same length");
+        }
+        auto& prog = std::get<Program>(prog_obj);
+        List result;
+        for (size_t j = 0; j < len; ++j) {
+            for (int i = 0; i < n; ++i) s.push(lists[i].items[j]);
+            ctx.execute_tokens(prog.tokens);
+            result.items.push_back(s.pop());
+        }
+        s.push(std::move(result));
+    });
+
+    // MAP : apply program to each element, collect results into list
+    register_command("MAP", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj))
+            throw std::runtime_error("Bad argument type");
+        Object lobj = s.pop();
+        if (!std::holds_alternative<List>(lobj))
+            throw std::runtime_error("Bad argument type");
+        auto& input_list = std::get<List>(lobj);
+        auto& prog = std::get<Program>(prog_obj);
+        List result;
+        for (auto& item : input_list.items) {
+            s.push(item);
+            ctx.execute_tokens(prog.tokens);
+            result.items.push_back(s.pop());
+        }
+        s.push(std::move(result));
+    });
+
+    // STREAM : reduce list with binary program
+    register_command("STREAM", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj))
+            throw std::runtime_error("Bad argument type");
+        Object lobj = s.pop();
+        if (!std::holds_alternative<List>(lobj))
+            throw std::runtime_error("Bad argument type");
+        auto& items = std::get<List>(lobj).items;
+        if (items.empty()) throw std::runtime_error("Empty list");
+        auto& prog = std::get<Program>(prog_obj);
+        s.push(items[0]);
+        for (size_t i = 1; i < items.size(); ++i) {
+            s.push(items[i]);
+            ctx.execute_tokens(prog.tokens);
+        }
+    });
+
+    // SEQ : generate list from start, step, count using program
+    register_command("SEQ", [](Store& s, Context& ctx) {
+        if (s.depth() < 4) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        Object count_obj = s.pop();
+        Object step_obj = s.pop();
+        Object start_obj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj) ||
+            !std::holds_alternative<Integer>(count_obj))
+            throw std::runtime_error("Bad argument type");
+        int count = static_cast<int>(std::get<Integer>(count_obj));
+        auto& prog = std::get<Program>(prog_obj);
+        List result;
+        Object current = start_obj;
+        for (int i = 0; i < count; ++i) {
+            s.push(current);
+            ctx.execute_tokens(prog.tokens);
+            result.items.push_back(s.pop());
+            // Advance: current = current + step
+            s.push(current);
+            s.push(step_obj);
+            ctx.execute_tokens({Token::make_command("+")});
+            current = s.pop();
+        }
+        s.push(std::move(result));
+    });
+
+    // FILTER : keep elements where program returns truthy
+    register_command("FILTER", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj))
+            throw std::runtime_error("Bad argument type");
+        Object lobj = s.pop();
+        if (!std::holds_alternative<List>(lobj))
+            throw std::runtime_error("Bad argument type");
+        auto& items = std::get<List>(lobj).items;
+        auto& prog = std::get<Program>(prog_obj);
+        List result;
+        for (auto& item : items) {
+            s.push(item);
+            ctx.execute_tokens(prog.tokens);
+            Object test = s.pop();
+            if (is_truthy(test)) {
+                result.items.push_back(item);
+            }
+        }
+        s.push(std::move(result));
+    });
+
+    // DOSUBS : apply program to sliding windows of N elements
+    register_command("DOSUBS", [](Store& s, Context& ctx) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object prog_obj = s.pop();
+        Object n_obj = s.pop();
+        Object lobj = s.pop();
+        if (!std::holds_alternative<Program>(prog_obj) ||
+            !std::holds_alternative<Integer>(n_obj) ||
+            !std::holds_alternative<List>(lobj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        auto& items = std::get<List>(lobj).items;
+        int sz = static_cast<int>(items.size());
+        if (n < 1 || n > sz) throw std::runtime_error("Bad argument value");
+        auto& prog = std::get<Program>(prog_obj);
+        List result;
+        for (int i = 0; i <= sz - n; ++i) {
+            for (int j = 0; j < n; ++j) s.push(items[i + j]);
+            ctx.execute_tokens(prog.tokens);
+            result.items.push_back(s.pop());
+        }
+        s.push(std::move(result));
+    });
+
+    // ZIP : transpose N lists into list of lists
+    register_command("ZIP", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1 || s.depth() < n) throw std::runtime_error("Too few arguments");
+        std::vector<List> lists(n);
+        for (int i = n - 1; i >= 0; --i) {
+            Object lobj = s.pop();
+            if (!std::holds_alternative<List>(lobj))
+                throw std::runtime_error("Bad argument type");
+            lists[i] = std::get<List>(std::move(lobj));
+        }
+        size_t len = lists[0].items.size();
+        for (int i = 1; i < n; ++i) {
+            if (lists[i].items.size() != len)
+                throw std::runtime_error("Lists must have same length");
+        }
+        List result;
+        for (size_t j = 0; j < len; ++j) {
+            List row;
+            for (int i = 0; i < n; ++i) row.items.push_back(lists[i].items[j]);
+            result.items.push_back(std::move(row));
+        }
+        s.push(std::move(result));
+    });
+
+    // --- Set operations ---
+
+    // UNION
+    register_command("UNION", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a) || !std::holds_alternative<List>(b))
+            throw std::runtime_error("Bad argument type");
+        auto result = std::get<List>(a);
+        auto& b_items = std::get<List>(b).items;
+        for (auto& item : b_items) {
+            bool found = false;
+            for (auto& existing : result.items) {
+                if (repr(existing) == repr(item)) { found = true; break; }
+            }
+            if (!found) result.items.push_back(item);
+        }
+        s.push(std::move(result));
+    });
+
+    // INTERSECT
+    register_command("INTERSECT", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a) || !std::holds_alternative<List>(b))
+            throw std::runtime_error("Bad argument type");
+        auto& a_items = std::get<List>(a).items;
+        auto& b_items = std::get<List>(b).items;
+        List result;
+        for (auto& item : a_items) {
+            for (auto& bi : b_items) {
+                if (repr(item) == repr(bi)) {
+                    result.items.push_back(item);
+                    break;
+                }
+            }
+        }
+        s.push(std::move(result));
+    });
+
+    // DIFFERENCE
+    register_command("DIFFERENCE", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<List>(a) || !std::holds_alternative<List>(b))
+            throw std::runtime_error("Bad argument type");
+        auto& a_items = std::get<List>(a).items;
+        auto& b_items = std::get<List>(b).items;
+        List result;
+        for (auto& item : a_items) {
+            bool found = false;
+            for (auto& bi : b_items) {
+                if (repr(item) == repr(bi)) { found = true; break; }
+            }
+            if (!found) result.items.push_back(item);
+        }
+        s.push(std::move(result));
+    });
+}
+
+// ---- Matrix Commands ----
+
+void CommandRegistry::register_matrix_commands() {
+    // ->V2 : construct 2D vector
+    auto to_v2 = [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object y = s.pop();
+        Object x = s.pop();
+        Matrix m;
+        m.rows.push_back({std::move(x), std::move(y)});
+        s.push(std::move(m));
+    };
+    register_command("\xe2\x86\x92V2", to_v2);
+    register_command("->V2", to_v2);
+
+    // ->V3 : construct 3D vector
+    auto to_v3 = [](Store& s, Context&) {
+        if (s.depth() < 3) throw std::runtime_error("Too few arguments");
+        Object z = s.pop();
+        Object y = s.pop();
+        Object x = s.pop();
+        Matrix m;
+        m.rows.push_back({std::move(x), std::move(y), std::move(z)});
+        s.push(std::move(m));
+    };
+    register_command("\xe2\x86\x92V3", to_v3);
+    register_command("->V3", to_v3);
+
+    // V-> : explode vector onto stack
+    auto v_to = [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Matrix>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& rows = std::get<Matrix>(a).rows;
+        if (rows.size() != 1)
+            throw std::runtime_error("V-> requires a vector (1-row matrix)");
+        for (auto& elem : rows[0]) s.push(elem);
+    };
+    register_command("V\xe2\x86\x92", v_to);
+    register_command("V->", v_to);
+
+    // CON : constant matrix/vector of given dimensions
+    register_command("CON", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object val = s.pop();
+        Object dims_obj = s.pop();
+        if (!std::holds_alternative<List>(dims_obj))
+            throw std::runtime_error("Bad argument type");
+        auto& dims = std::get<List>(dims_obj).items;
+        Matrix m;
+        if (dims.size() == 1) {
+            int cols = static_cast<int>(std::get<Integer>(dims[0]));
+            m.rows.push_back(std::vector<Object>(cols, val));
+        } else if (dims.size() == 2) {
+            int rows = static_cast<int>(std::get<Integer>(dims[0]));
+            int cols = static_cast<int>(std::get<Integer>(dims[1]));
+            for (int r = 0; r < rows; ++r)
+                m.rows.push_back(std::vector<Object>(cols, val));
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+        s.push(std::move(m));
+    });
+
+    // IDN : identity matrix
+    register_command("IDN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object n_obj = s.pop();
+        if (!std::holds_alternative<Integer>(n_obj))
+            throw std::runtime_error("Bad argument type");
+        int n = static_cast<int>(std::get<Integer>(n_obj));
+        if (n < 1) throw std::runtime_error("Bad argument value");
+        Matrix m;
+        for (int r = 0; r < n; ++r) {
+            std::vector<Object> row(n, Integer(0));
+            row[r] = Integer(1);
+            m.rows.push_back(std::move(row));
+        }
+        s.push(std::move(m));
+    });
+
+    // RDM : redimension matrix
+    register_command("RDM", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object dims_obj = s.pop();
+        Object mat_obj = s.pop();
+        if (!std::holds_alternative<Matrix>(mat_obj) || !std::holds_alternative<List>(dims_obj))
+            throw std::runtime_error("Bad argument type");
+        auto& old_mat = std::get<Matrix>(mat_obj);
+        auto& dims = std::get<List>(dims_obj).items;
+        // Flatten old matrix
+        std::vector<Object> flat;
+        for (auto& row : old_mat.rows)
+            for (auto& elem : row)
+                flat.push_back(elem);
+        Matrix m;
+        if (dims.size() == 1) {
+            int cols = static_cast<int>(std::get<Integer>(dims[0]));
+            std::vector<Object> row;
+            for (int c = 0; c < cols; ++c)
+                row.push_back(c < static_cast<int>(flat.size()) ? flat[c] : Integer(0));
+            m.rows.push_back(std::move(row));
+        } else if (dims.size() == 2) {
+            int rows = static_cast<int>(std::get<Integer>(dims[0]));
+            int cols = static_cast<int>(std::get<Integer>(dims[1]));
+            size_t idx = 0;
+            for (int r = 0; r < rows; ++r) {
+                std::vector<Object> row;
+                for (int c = 0; c < cols; ++c) {
+                    row.push_back(idx < flat.size() ? flat[idx] : Integer(0));
+                    ++idx;
+                }
+                m.rows.push_back(std::move(row));
+            }
+        } else {
+            throw std::runtime_error("Bad argument type");
+        }
+        s.push(std::move(m));
+    });
+
+    // TRN : transpose
+    register_command("TRN", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Matrix>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& rows = std::get<Matrix>(a).rows;
+        if (rows.empty()) { s.push(a); return; }
+        int nr = static_cast<int>(rows.size());
+        int nc = static_cast<int>(rows[0].size());
+        Matrix result;
+        for (int c = 0; c < nc; ++c) {
+            std::vector<Object> row;
+            for (int r = 0; r < nr; ++r) row.push_back(rows[r][c]);
+            result.rows.push_back(std::move(row));
+        }
+        s.push(std::move(result));
+    });
+
+    // DET : determinant (numeric or symbolic)
+    register_command("DET", [this](Store& s, Context& ctx) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object a = s.pop();
+        if (!std::holds_alternative<Matrix>(a))
+            throw std::runtime_error("Bad argument type");
+        auto& rows = std::get<Matrix>(a).rows;
+        int n = static_cast<int>(rows.size());
+        if (n == 0 || static_cast<int>(rows[0].size()) != n)
+            throw std::runtime_error("DET requires a square matrix");
+
+        // Recursive determinant via cofactor expansion
+        std::function<Object(const std::vector<std::vector<Object>>&, int)> det;
+        det = [&](const std::vector<std::vector<Object>>& m, int sz) -> Object {
+            if (sz == 1) return m[0][0];
+            if (sz == 2) {
+                // a*d - b*c
+                s.push(m[0][0]); s.push(m[1][1]);
+                this->execute("*", s, ctx);
+                s.push(m[0][1]); s.push(m[1][0]);
+                this->execute("*", s, ctx);
+                this->execute("-", s, ctx);
+                return s.pop();
+            }
+            // Cofactor expansion along first row
+            Object result = Integer(0);
+            bool first = true;
+            for (int j = 0; j < sz; ++j) {
+                // Build minor matrix
+                std::vector<std::vector<Object>> minor;
+                for (int r = 1; r < sz; ++r) {
+                    std::vector<Object> row;
+                    for (int c = 0; c < sz; ++c) {
+                        if (c != j) row.push_back(m[r][c]);
+                    }
+                    minor.push_back(std::move(row));
+                }
+                Object cofactor = det(minor, sz - 1);
+                // Multiply by element and sign
+                s.push(m[0][j]); s.push(cofactor);
+                this->execute("*", s, ctx);
+                Object term = s.pop();
+                if (first) {
+                    result = (j % 2 == 0) ? term : term; // first term
+                    if (j % 2 != 0) {
+                        s.push(term); this->execute("NEG", s, ctx);
+                        result = s.pop();
+                    } else {
+                        result = term;
+                    }
+                    first = false;
+                } else {
+                    s.push(result); s.push(term);
+                    if (j % 2 == 0) {
+                        this->execute("+", s, ctx);
+                    } else {
+                        this->execute("-", s, ctx);
+                    }
+                    result = s.pop();
+                }
+            }
+            return result;
+        };
+        s.push(det(rows, n));
+    });
+
+    // CROSS : cross product (3D vectors)
+    register_command("CROSS", [this](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Matrix>(a) || !std::holds_alternative<Matrix>(b))
+            throw std::runtime_error("Bad argument type");
+        auto& ar = std::get<Matrix>(a).rows;
+        auto& br = std::get<Matrix>(b).rows;
+        if (ar.size() != 1 || ar[0].size() != 3 || br.size() != 1 || br[0].size() != 3)
+            throw std::runtime_error("CROSS requires 3D vectors");
+        // a x b = [a2*b3-a3*b2, a3*b1-a1*b3, a1*b2-a2*b1]
+        auto cross_elem = [&](int i1, int j1, int i2, int j2) -> Object {
+            s.push(ar[0][i1]); s.push(br[0][j1]);
+            this->execute("*", s, ctx);
+            s.push(ar[0][i2]); s.push(br[0][j2]);
+            this->execute("*", s, ctx);
+            this->execute("-", s, ctx);
+            return s.pop();
+        };
+        Object x = cross_elem(1, 2, 2, 1);
+        Object y = cross_elem(2, 0, 0, 2);
+        Object z = cross_elem(0, 1, 1, 0);
+        Matrix result;
+        result.rows.push_back({std::move(x), std::move(y), std::move(z)});
+        s.push(std::move(result));
+    });
+
+    // DOT : dot product
+    register_command("DOT", [this](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object b = s.pop();
+        Object a = s.pop();
+        if (!std::holds_alternative<Matrix>(a) || !std::holds_alternative<Matrix>(b))
+            throw std::runtime_error("Bad argument type");
+        auto& ar = std::get<Matrix>(a).rows;
+        auto& br = std::get<Matrix>(b).rows;
+        if (ar.size() != 1 || br.size() != 1 || ar[0].size() != br[0].size())
+            throw std::runtime_error("DOT requires vectors of equal length");
+        size_t n = ar[0].size();
+        // First product
+        s.push(ar[0][0]); s.push(br[0][0]);
+        this->execute("*", s, ctx);
+        // Accumulate remaining products
+        for (size_t i = 1; i < n; ++i) {
+            s.push(ar[0][i]); s.push(br[0][i]);
+            this->execute("*", s, ctx);
+            this->execute("+", s, ctx);
+        }
+    });
+
+    // ABS on vectors (Euclidean norm)
+    // This is handled in the arithmetic overload section
 }
 
 } // namespace lpr

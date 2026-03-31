@@ -144,6 +144,8 @@ UTF-8 arrow variants `->NUM`, `->STR`, `STR->` are also accepted as `->NUM`, `->
 | 6 | Name |
 | 7 | Error |
 | 8 | Symbol |
+| 9 | List |
+| 10 | Matrix |
 
 **Examples:**
 
@@ -454,6 +456,126 @@ The `+` command is overloaded: when both operands are Strings, it concatenates. 
 
 ---
 
+## List Operations
+
+Lists are heterogeneous ordered collections using `{ }` delimiters. Elements can be any type including nested lists. Indexing is 1-based.
+
+### Core Access
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `LIST->` | `( { a b c } -- a b c 3 )` | Explode list onto stack with count |
+| `->LIST` | `( a b c 3 -- { a b c } )` | Collect N items from stack into list |
+| `GET` | `( list idx -- elem )` | 1-based element access |
+| `PUT` | `( list idx val -- list' )` | 1-based element replacement |
+| `GETI` | `( list idx -- list idx' elem )` | GET with auto-incremented index |
+| `PUTI` | `( list idx val -- list' idx' )` | PUT with auto-incremented index |
+| `HEAD` | `( list -- first )` | First element (also works on strings) |
+| `TAIL` | `( list -- rest )` | All but first element (also works on strings) |
+| `SIZE` | `( list -- n )` | Element count (also works on strings and matrices) |
+| `POS` | `( list elem -- idx )` | Find element, return 1-based index or 0 (also works on strings) |
+| `SUB` | `( list start end -- sublist )` | Sub-list by 1-based indices (also works on strings) |
+| `ADD` | `( list elem -- list' )` | Append element to list |
+| `REVLIST` | `( list -- list' )` | Reverse list |
+| `SORT` | `( list -- list' )` | Sort homogeneous numeric or string list |
+
+### Higher-Order Operations
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `MAP` | `( list prog -- list' )` | Apply program to each element, collect results |
+| `FILTER` | `( list prog -- list' )` | Keep elements where program returns truthy |
+| `STREAM` | `( list prog -- result )` | Reduce list with binary program |
+| `DOLIST` | `( list1 ... listN N prog -- list' )` | Apply program to corresponding elements of N lists |
+| `SEQ` | `( start step count prog -- list )` | Generate list by applying program to sequence values |
+| `DOSUBS` | `( list N prog -- list' )` | Apply program to sliding windows of N elements |
+| `ZIP` | `( list1 ... listN N -- list' )` | Transpose N lists into list of lists |
+
+### Set Operations
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `UNION` | `( list1 list2 -- list )` | Set union (preserve order, no duplicates) |
+| `INTERSECT` | `( list1 list2 -- list )` | Set intersection |
+| `DIFFERENCE` | `( list1 list2 -- list )` | Set difference (elements in list1 not in list2) |
+
+### Arithmetic Overloads
+
+- `{ a b } + { c d }` — element-wise addition (matching lengths)
+- `scalar + { a b }` / `{ a b } + scalar` — broadcast scalar
+- Same for `-`, `*`, `/`
+- `{ a b } NEG` — negate each element
+
+**Examples:**
+
+```
+{ 1 2 3 } { 4 5 6 } +           => { 5 7 9 }
+{ 1 2 3 } 10 *                   => { 10 20 30 }
+{ 5 3 1 4 } SORT                 => { 1 3 4 5 }
+{ 1 2 3 } << 2 * >> MAP          => { 2 4 6 }
+{ 1 2 3 4 } << + >> STREAM       => 10
+{ 1 2 3 } { 2 3 4 } UNION        => { 1 2 3 4 }
+```
+
+---
+
+## Matrix/Vector Operations
+
+Matrices use `[[ ]]` delimiters with `][` row separators. A 1-row matrix acts as a vector. Elements must be numeric (Integer, Real, Rational, Complex) or symbolic (Name, Symbol). Indexing via `{ row col }` lists.
+
+### Construction
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `->V2` | `( x y -- [[ x y ]] )` | Construct 2D vector |
+| `->V3` | `( x y z -- [[ x y z ]] )` | Construct 3D vector |
+| `V->` | `( [[ x y z ]] -- x y z )` | Explode vector onto stack |
+| `CON` | `( { dims } val -- matrix )` | Constant matrix/vector |
+| `IDN` | `( n -- matrix )` | n×n identity matrix |
+| `RDM` | `( matrix { dims } -- matrix' )` | Redimension matrix |
+
+### Access & Properties
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `GET` | `( matrix { r c } -- elem )` | Element access by row/col |
+| `PUT` | `( matrix { r c } val -- matrix' )` | Element replacement |
+| `SIZE` | `( matrix -- { rows cols } )` | Matrix dimensions |
+| `TRN` | `( matrix -- matrix' )` | Transpose |
+
+### Linear Algebra
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `DET` | `( matrix -- value )` | Determinant (numeric or symbolic) |
+| `INV` | `( matrix -- matrix' )` | Matrix inverse (numeric only) |
+| `CROSS` | `( vec3 vec3 -- vec3 )` | Cross product (3D vectors) |
+| `DOT` | `( vec vec -- scalar )` | Dot product |
+| `ABS` | `( vec -- norm )` | Euclidean norm (numeric only) |
+
+### Arithmetic Overloads
+
+- `matrix + matrix` — element-wise addition (matching dimensions)
+- `matrix * matrix` — matrix multiplication
+- `scalar * matrix` / `matrix * scalar` — scalar multiplication
+- `matrix * vector` — matrix-vector product
+- `matrix NEG` — negate all elements
+
+Symbolic matrices support arithmetic (`+`, `-`, `*`), `DET`, `CROSS`, `DOT`, and `TRN`. Results are unsimplified expression strings.
+
+**Examples:**
+
+```
+[[ 1 2 ][ 3 4 ]] [[ 5 6 ][ 7 8 ]] *    => [[ 19 22 ][ 43 50 ]]
+[[ 1 2 ][ 3 4 ]] DET                    => -2
+3 IDN                                    => [[ 1 0 0 ][ 0 1 0 ][ 0 0 1 ]]
+[[ 1 0 0 ]] [[ 0 1 0 ]] CROSS           => [[ 0 0 1 ]]
+[[ 1 2 3 ]] [[ 4 5 6 ]] DOT             => 32
+[[ 'a' 'b' ][ 'c' 'd' ]] DET           => 'a*d-b*c'
+```
+
+---
+
 ## Symbolic Manipulation
 
 Commands for inspecting, decomposing, and reconstructing symbolic expressions. These commands operate on the expression tree stored as an infix string inside a Symbol, using the expression tokenizer to work at the structural level.
@@ -573,6 +695,8 @@ When an operation involves two different numeric types, the lower-ranked operand
 | **Symbol** | `'X^2 + 1'` | Algebraic expression (single-quoted, contains operators); evaluable via `EVAL` |
 | **Program** | `<< DUP * >>` | Executable code block (guillemets) |
 | **Error** | (auto-generated) | Error with code and message |
+| **List** | `{ 1 2 3 }` | Heterogeneous ordered collection; nesting allowed |
+| **Matrix** | `[[ 1 2 ][ 3 4 ]]` | Row-major numeric/symbolic matrix; 1-row = vector |
 
 ---
 
@@ -691,11 +815,11 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 96 | `%CH` | Percentage | 2 | Percent change |
 | 97 | `D->R` | Angle Conv | 1 | Degrees to radians |
 | 98 | `R->D` | Angle Conv | 1 | Radians to degrees |
-| 99 | `SIZE` | String | 1 | String length |
-| 100 | `HEAD` | String | 1 | First character |
-| 101 | `TAIL` | String | 1 | All but first character |
-| 102 | `SUB` | String | 3 | Substring |
-| 103 | `POS` | String | 2 | Find position |
+| 99 | `SIZE` | String/List/Matrix | 1 | Length, element count, or dimensions |
+| 100 | `HEAD` | String/List | 1 | First character or element |
+| 101 | `TAIL` | String/List | 1 | All but first |
+| 102 | `SUB` | String/List | 3 | Substring or sub-list |
+| 103 | `POS` | String/List | 2 | Find position |
 | 104 | `REPL` | String | 3 | Replace first occurrence |
 | 105 | `NUM` | String | 1 | Char to codepoint |
 | 106 | `CHR` | String | 1 | Codepoint to char |
@@ -705,3 +829,32 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 110 | `UNSTASH` | Symbolic | 0 | Restore most recent stash group |
 | 111 | `EXPLODE` | Symbolic | 1 | Decompose top-level operation |
 | 112 | `ASSEMBLE` | Symbolic | varies | Reassemble from stash groups |
+| 113 | `LIST->` | List | 1 | Explode list with count |
+| 114 | `->LIST` | List | n+1 | Collect N items into list |
+| 115 | `GET` | List/Matrix | 2 | Element access (1-based) |
+| 116 | `PUT` | List/Matrix | 3 | Element replacement (1-based) |
+| 117 | `GETI` | List | 2 | GET with auto-increment |
+| 118 | `PUTI` | List | 3 | PUT with auto-increment |
+| 119 | `ADD` | List | 2 | Append element |
+| 120 | `REVLIST` | List | 1 | Reverse list |
+| 121 | `SORT` | List | 1 | Sort homogeneous list |
+| 122 | `MAP` | List | 2 | Apply program to each element |
+| 123 | `FILTER` | List | 2 | Keep elements passing test |
+| 124 | `STREAM` | List | 2 | Reduce with binary program |
+| 125 | `DOLIST` | List | n+2 | Apply program to N lists |
+| 126 | `SEQ` | List | 4 | Generate list from sequence |
+| 127 | `DOSUBS` | List | 3 | Sliding window application |
+| 128 | `ZIP` | List | n+1 | Transpose N lists |
+| 129 | `UNION` | List | 2 | Set union |
+| 130 | `INTERSECT` | List | 2 | Set intersection |
+| 131 | `DIFFERENCE` | List | 2 | Set difference |
+| 132 | `->V2` | Matrix | 2 | Construct 2D vector |
+| 133 | `->V3` | Matrix | 3 | Construct 3D vector |
+| 134 | `V->` | Matrix | 1 | Explode vector |
+| 135 | `CON` | Matrix | 2 | Constant matrix |
+| 136 | `IDN` | Matrix | 1 | Identity matrix |
+| 137 | `RDM` | Matrix | 2 | Redimension matrix |
+| 138 | `TRN` | Matrix | 1 | Transpose |
+| 139 | `DET` | Matrix | 1 | Determinant |
+| 140 | `CROSS` | Matrix | 2 | Cross product |
+| 141 | `DOT` | Matrix | 2 | Dot product |

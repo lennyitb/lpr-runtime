@@ -1,7 +1,6 @@
 #include "core/object.hpp"
 #include "core/parser.hpp"
 #include <sstream>
-#include <stdexcept>
 
 namespace lpr {
 
@@ -34,8 +33,27 @@ std::string repr(const Object& obj) {
             return "Error " + std::to_string(v.code) + ": " + v.message;
         } else if constexpr (std::is_same_v<T, Symbol>) {
             return "'" + v.value + "'";
+        } else if constexpr (std::is_same_v<T, List>) {
+            std::string s = "{ ";
+            for (size_t i = 0; i < v.items.size(); ++i) {
+                if (i > 0) s += " ";
+                s += repr(v.items[i]);
+            }
+            s += " }";
+            return s;
+        } else if constexpr (std::is_same_v<T, Matrix>) {
+            std::string s = "[[ ";
+            for (size_t r = 0; r < v.rows.size(); ++r) {
+                if (r > 0) s += " ][ ";
+                for (size_t c = 0; c < v.rows[r].size(); ++c) {
+                    if (c > 0) s += " ";
+                    s += repr(v.rows[r][c]);
+                }
+            }
+            s += " ]]";
+            return s;
         }
-    }, obj);
+    }, obj.as_variant());
 }
 
 static std::string repr_tokens(const std::vector<Token>& tokens) {
@@ -69,7 +87,6 @@ std::string serialize(const Object& obj) {
         } else if constexpr (std::is_same_v<T, Real>) {
             return v.str();
         } else if constexpr (std::is_same_v<T, Rational>) {
-            // Store as "numerator/denominator"
             return boost::multiprecision::numerator(v).str() + "/" +
                    boost::multiprecision::denominator(v).str();
         } else if constexpr (std::is_same_v<T, Complex>) {
@@ -84,18 +101,21 @@ std::string serialize(const Object& obj) {
             return std::to_string(v.code) + "|" + v.message;
         } else if constexpr (std::is_same_v<T, Symbol>) {
             return v.value;
+        } else if constexpr (std::is_same_v<T, List>) {
+            // Use repr form — re-parsed on deserialize (handles nesting)
+            return repr(Object(v));
+        } else if constexpr (std::is_same_v<T, Matrix>) {
+            return repr(Object(v));
         }
-    }, obj);
+    }, obj.as_variant());
 }
 
-// Serialize tokens as the repr form (« ... ») but without outer delimiters
 static std::string serialize_tokens(const std::vector<Token>& tokens) {
     return repr_tokens(tokens);
 }
 
 // ---------- deserialize ----------
 
-// Forward declarations for the parser (used in Program deserialization)
 namespace {
 
 Object deserialize_impl(TypeTag tag, const std::string& data) {
@@ -136,6 +156,18 @@ Object deserialize_impl(TypeTag tag, const std::string& data) {
         }
         case TypeTag::Symbol:
             return Symbol{data};
+        case TypeTag::List:
+        case TypeTag::Matrix: {
+            // Stored as repr form — parse it back
+            if (!data.empty()) {
+                auto tokens = parse(data);
+                if (tokens.size() == 1 && tokens[0].kind == Token::Literal) {
+                    return std::move(tokens[0].literal);
+                }
+            }
+            if (tag == TypeTag::List) return List{};
+            return Matrix{};
+        }
     }
     return Error{99, "Unknown type tag"};
 }

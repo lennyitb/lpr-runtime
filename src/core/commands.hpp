@@ -34,6 +34,8 @@ private:
     void register_transcendental_commands();
     void register_string_commands();
     void register_symbolic_commands();
+    void register_list_commands();
+    void register_matrix_commands();
 };
 
 } // namespace lpr

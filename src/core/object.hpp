@@ -25,6 +25,12 @@ struct Token;
 
 struct Program { std::vector<Token> tokens; };
 
+// Forward declare Object for self-referential compound types
+struct Object;
+
+struct List   { std::vector<Object> items; };
+struct Matrix { std::vector<std::vector<Object>> rows; };
+
 // Type tags for serialization
 enum class TypeTag : int {
     Integer  = 0,
@@ -36,9 +42,12 @@ enum class TypeTag : int {
     Name     = 6,
     Error    = 7,
     Symbol   = 8,
+    List     = 9,
+    Matrix   = 10,
 };
 
-using Object = std::variant<
+// Base variant type — exposed so std::visit can be called via cast
+using ObjectBase = std::variant<
     Integer,   // 0
     Real,      // 1
     Rational,  // 2
@@ -47,8 +56,20 @@ using Object = std::variant<
     Program,   // 5
     Name,      // 6
     Error,     // 7
-    Symbol     // 8
+    Symbol,    // 8
+    List,      // 9
+    Matrix     // 10
 >;
+
+// Object inherits from variant so it can be forward-declared for List/Matrix
+// while keeping std::holds_alternative, std::get working directly.
+// Use as_variant() for std::visit calls.
+struct Object : ObjectBase {
+    using ObjectBase::ObjectBase;
+    using ObjectBase::operator=;
+    const ObjectBase& as_variant() const { return *this; }
+    ObjectBase& as_variant() { return *this; }
+};
 
 // Token: either a literal to push, or a command name to execute
 struct Token {

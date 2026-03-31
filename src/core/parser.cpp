@@ -176,6 +176,132 @@ std::vector<Token> parse(const std::string& input) {
             continue;
         }
 
+        // List literal: { ... }
+        if (input[i] == '{') {
+            ++i; // skip {
+            int nesting = 1;
+            std::string body;
+            while (i < len && nesting > 0) {
+                if (input[i] == '{') {
+                    nesting++;
+                    body += input[i];
+                    ++i;
+                } else if (input[i] == '}') {
+                    nesting--;
+                    if (nesting > 0) {
+                        body += input[i];
+                    }
+                    ++i;
+                } else {
+                    body += input[i];
+                    ++i;
+                }
+            }
+            // Trim whitespace from body
+            size_t bs = body.find_first_not_of(" \t\n\r");
+            size_t be = body.find_last_not_of(" \t\n\r");
+            if (bs != std::string::npos) {
+                body = body.substr(bs, be - bs + 1);
+            } else {
+                body.clear();
+            }
+            // Parse body tokens and evaluate them into list items
+            List list;
+            if (!body.empty()) {
+                auto inner_tokens = parse(body);
+                for (auto& t : inner_tokens) {
+                    if (t.kind == Token::Literal) {
+                        list.items.push_back(std::move(t.literal));
+                    } else {
+                        // Bare word in list — try as number, otherwise treat as command name
+                        // (commands in list literals are pushed as-is for later evaluation)
+                        list.items.push_back(Name{t.command});
+                    }
+                }
+            }
+            tokens.push_back(Token::make_literal(std::move(list)));
+            continue;
+        }
+
+        // Matrix literal: [[ ... ][ ... ] ... ]]
+        if (input[i] == '[' && i + 1 < len && input[i + 1] == '[') {
+            i += 2; // skip [[
+            Matrix mat;
+            std::vector<Object> current_row;
+            std::string elem;
+
+            auto flush_elem = [&]() {
+                // Trim whitespace
+                size_t a = elem.find_first_not_of(" \t\n\r");
+                size_t b = elem.find_last_not_of(" \t\n\r");
+                if (a != std::string::npos) {
+                    std::string trimmed = elem.substr(a, b - a + 1);
+                    auto elem_tokens = parse(trimmed);
+                    if (elem_tokens.size() == 1 && elem_tokens[0].kind == Token::Literal) {
+                        Object obj = std::move(elem_tokens[0].literal);
+                        // Validate: only numeric and symbolic types allowed
+                        if (std::holds_alternative<Integer>(obj) ||
+                            std::holds_alternative<Real>(obj) ||
+                            std::holds_alternative<Rational>(obj) ||
+                            std::holds_alternative<Complex>(obj) ||
+                            std::holds_alternative<Symbol>(obj) ||
+                            std::holds_alternative<Name>(obj)) {
+                            current_row.push_back(std::move(obj));
+                        } else {
+                            throw std::runtime_error("Invalid matrix element type");
+                        }
+                    } else if (elem_tokens.size() == 1 && elem_tokens[0].kind == Token::Command) {
+                        // Bare name in matrix -> Name
+                        current_row.push_back(Name{elem_tokens[0].command});
+                    } else if (!elem_tokens.empty()) {
+                        throw std::runtime_error("Invalid matrix element");
+                    }
+                }
+                elem.clear();
+            };
+
+            while (i < len) {
+                // Check for ][ (row separator)
+                if (input[i] == ']' && i + 1 < len && input[i + 1] == '[') {
+                    flush_elem();
+                    if (!current_row.empty()) {
+                        mat.rows.push_back(std::move(current_row));
+                        current_row.clear();
+                    }
+                    i += 2;
+                    continue;
+                }
+                // Check for ]] (matrix close)
+                if (input[i] == ']' && i + 1 < len && input[i + 1] == ']') {
+                    flush_elem();
+                    if (!current_row.empty()) {
+                        mat.rows.push_back(std::move(current_row));
+                    }
+                    i += 2;
+                    break;
+                }
+                // Whitespace separates elements
+                if (is_whitespace(input[i])) {
+                    flush_elem();
+                    ++i;
+                    continue;
+                }
+                elem += input[i];
+                ++i;
+            }
+            // Validate uniform row lengths
+            if (!mat.rows.empty()) {
+                size_t cols = mat.rows[0].size();
+                for (size_t r = 1; r < mat.rows.size(); ++r) {
+                    if (mat.rows[r].size() != cols) {
+                        throw std::runtime_error("Matrix rows must have uniform length");
+                    }
+                }
+            }
+            tokens.push_back(Token::make_literal(std::move(mat)));
+            continue;
+        }
+
         // Complex literal: (re, im)
         if (input[i] == '(') {
             size_t start = i;
@@ -212,7 +338,12 @@ std::vector<Token> parse(const std::string& input) {
         // Bare word or number
         size_t start = i;
         while (i < len && !is_whitespace(input[i]) &&
-               !starts_with_prog_open(input, i) && !starts_with_prog_close(input, i)) {
+               !starts_with_prog_open(input, i) && !starts_with_prog_close(input, i) &&
+               input[i] != '{' && input[i] != '}') {
+            // Stop at [[ or ]] (matrix delimiters)
+            if (input[i] == '[' && i + 1 < len && input[i + 1] == '[') break;
+            if (input[i] == ']' && i + 1 < len && input[i + 1] == ']') break;
+            if (input[i] == ']' && i + 1 < len && input[i + 1] == '[') break;
             ++i;
         }
         std::string word = input.substr(start, i - start);
