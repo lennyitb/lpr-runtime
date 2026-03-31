@@ -3,7 +3,7 @@
 ### Requirement: CAS Bridge Interface
 The runtime SHALL define an abstract `CASBridge` class in `src/cas/bridge.hpp` with pure virtual methods: `differentiate`, `integrate`, `solve`, `simplify`, `expand`, and `factor`. A concrete `SymEngineBridge` implementation SHALL convert between the runtime's Symbol string representation and SymEngine's native expression trees, performing algebraic operations via SymEngine's API.
 
-The bridge SHALL maintain a bidirectional function name mapping between RPL conventions (uppercase: SIN, COS, LN, EXP, SQRT, SQ) and SymEngine conventions (lowercase: sin, cos, log, exp, sqrt, pow). Expressions containing functions not recognized by SymEngine (e.g., IFTE) SHALL produce a descriptive error.
+The bridge SHALL maintain a bidirectional function name mapping between RPL conventions (uppercase: SIN, COS, TAN, ASIN, ACOS, ATAN, ATAN2, EXP, LN, LOG, SQRT, SQ, ABS) and SymEngine conventions (lowercase: sin, cos, tan, asin, acos, atan, atan2, exp, log, log10, sqrt, pow, Abs). Expressions containing functions not recognized by SymEngine (e.g., IFTE) SHALL produce a descriptive error.
 
 `Context` SHALL own a `std::unique_ptr<CASBridge>`, defaulting to `SymEngineBridge`, accessible via `Context::cas()`.
 

@@ -1,5 +1,5 @@
 ## 1. Build system: SymEngine dependency
-- [ ] 1.1 Add SymEngine FetchContent block to `CMakeLists.txt`: pin release tag, set `INTEGER_CLASS=boostmp`, `BUILD_TESTS=OFF`, `BUILD_BENCHMARKS=OFF`, `WITH_SYMENGINE_THREAD_SAFE=OFF`
+- [ ] 1.1 Add SymEngine FetchContent block to `CMakeLists.txt`: pin `v0.14.0`, set `INTEGER_CLASS=boostmp`, disable all optional deps (FLINT, ARB, MPFR, MPC, LLVM, PTHREAD, OPENMP, BFD, ECM, PRIMESIEVE, PIRANHA, TCMALLOC), `BUILD_TESTS=OFF`, `BUILD_BENCHMARKS=OFF`. Ensure Boost is fetched before SymEngine so `find_package(Boost)` resolves correctly.
 - [ ] 1.2 Link SymEngine target to `liblpr` (PUBLIC, so tests and CLI inherit it)
 - [ ] 1.3 Verify clean configure and build on macOS: `cmake -B build && cmake --build build`
 - [ ] 1.4 **Checkpoint — no regressions**: run `lpr-tests` and confirm all 452+ existing tests pass with SymEngine linked but unused

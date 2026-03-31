@@ -9,7 +9,7 @@ The build system SHALL use CMake 3.20+ targeting C++17 and SHALL use `FetchConte
 
 #### Scenario: Required dependencies are fetched
 - **WHEN** the project is configured
-- **THEN** Boost headers (1.84+), SQLite3 amalgamation (3.44+), Catch2 (v3.5+), and SymEngine (with `INTEGER_CLASS=boostmp`) are available
+- **THEN** Boost headers (1.84+), SQLite3 amalgamation (3.44+), Catch2 (v3.5+), and SymEngine (v0.14.0+ with `INTEGER_CLASS=boostmp`) are available
 
 #### Scenario: SymEngine builds without GMP
 - **WHEN** the project is configured on a system without GMP installed
