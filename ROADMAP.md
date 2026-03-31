@@ -141,13 +141,14 @@ CI, not runtime code.
 - **Giac CAS backend** -- full CAS parity with the HP 50g, swappable via
   the bridge interface once SymEngine is proven out
 - **Graphing & plotting data** -- DRAW, PLOT, FUNCTION types that produce
-  renderable plot data for host UIs to consume
-- **Unit system** -- physical unit types with automatic conversion
+  renderable plot data for host UIs to consume. I don't really care too much about this.
+- **Unit system** -- physical unit types with automatic conversion this would be cool indeed
   (HP 50g's unit library is extensive)
 - **I/O & system commands** -- WAIT, BEEP, DATE, TIME, TICKS, MEM, BYTES,
   VERSION (host-dependent, exposed through the C API)
 - **User-defined command registration** -- host applications registering
-  custom commands via the C API
+  custom commands via the C API. better yet:
+- **System RPL Exposure** -- how awesome would it be if you could punch assembler into your iOS app.
 - **Performance** -- command file splitting (commands.cpp is now 1500+ lines),
   object pooling, prepared statement caching, benchmarking harness
 - **OpenSpec spec promotion** -- archive completed changes and promote
