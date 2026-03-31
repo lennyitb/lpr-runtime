@@ -57,15 +57,23 @@ lpr_result  lpr_exec(lpr_ctx* ctx, const char* input);
 int         lpr_depth(lpr_ctx* ctx);
 char*       lpr_repr(lpr_ctx* ctx, int level); // caller must lpr_free()
 
-// History
+// Undo/redo
 int         lpr_undo(lpr_ctx* ctx);            // returns 1 on success
 int         lpr_redo(lpr_ctx* ctx);            // returns 1 on success
+
+// Settings
+char*       lpr_get_setting(lpr_ctx* ctx, const char* key); // caller must lpr_free()
+
+// Command history
+int         lpr_history_count(lpr_ctx* ctx);            // total entries
+char*       lpr_history_entry(lpr_ctx* ctx, int index);  // 0 = most recent; caller frees
 
 // Memory
 void        lpr_free(void* ptr);
 ```
 
-Seven functions plus one deallocator. That's the entire public API.
+Eleven functions plus one deallocator. Settings and history are read-only from the
+C API — display modes and flags are set via RPL commands through `lpr_exec`.
 
 ### Usage example (from C)
 
@@ -193,16 +201,30 @@ CREATE TABLE stash_history (
     PRIMARY KEY(seq, group_id, pos)
 );
 
--- Runtime metadata
+-- Runtime metadata (internal bookkeeping)
 CREATE TABLE meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+-- Meta keys: current_dir, undo_seq, angle_mode, number_format, format_digits, coordinate_mode
+
+-- Typed flag registry (user-visible settings, independent from meta)
+CREATE TABLE flags (
+    name     TEXT PRIMARY KEY,
+    type_tag INTEGER NOT NULL,  -- 0=bool, 1=integer, 2=real, 3=string
+    value    TEXT NOT NULL
+);
+
+-- Command input history (every successful lpr_exec is recorded)
+CREATE TABLE input_history (
+    seq   INTEGER PRIMARY KEY AUTOINCREMENT,
+    input TEXT NOT NULL
+);
 
 -- Seed: root HOME directory
 INSERT INTO directories (id, parent_id, name) VALUES (1, NULL, 'HOME');
-INSERT INTO meta (key, value) VALUES ('cwd', '1');          -- current directory
-INSERT INTO meta (key, value) VALUES ('history_pos', '0');  -- undo cursor
+INSERT INTO meta (key, value) VALUES ('current_dir', '1');
+INSERT INTO meta (key, value) VALUES ('undo_seq', '0');
 ```
 
 ### Serialization
@@ -291,6 +313,28 @@ The expression tokenizer (in `expression.cpp`) handles infix notation with:
 
 This tokenizer is used by EVAL (for evaluating symbolic expressions), SUBST (for
 token-level substitution), and EXPLODE (for structural decomposition).
+
+### DisplaySettings Pattern
+
+`repr()` is a free function with no access to `Context` or `Store`. To support
+formatted output (FIX, SCI, ENG, POLAR), `repr()` accepts an optional
+`DisplaySettings` struct — a small POD containing the current format mode, digit
+count, and coordinate mode. The zero-arg `repr(obj)` calls it with STD defaults,
+preserving backward compatibility.
+
+`Context::repr_at()` reads three meta keys (`number_format`, `format_digits`,
+`coordinate_mode`) and constructs the settings each time. `lpr_repr()` calls
+through to `repr_at()`, so frontends get formatted output automatically.
+
+### Command History
+
+Every successful `lpr_exec` call records the input string in the `input_history`
+table. Two C API functions (`lpr_history_count`, `lpr_history_entry`) provide
+index-based read access (0 = most recent). History lives in the same SQLite
+database, so it persists, backs up, and restores with all other runtime state.
+
+The CLI populates linenoise's in-memory history from the SQLite table on startup.
+After each input, the runtime records it; no separate CLI-side file is needed.
 
 ### Execution Flow of `lpr_exec(ctx, input)`
 

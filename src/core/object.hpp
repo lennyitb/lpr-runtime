@@ -94,8 +94,20 @@ private:
     Token() : kind(Command) {}
 };
 
+// Display settings
+enum class NumberFormat { STD, FIX, SCI, ENG };
+enum class CoordinateMode { RECT, POLAR, SPHERICAL };
+
+struct DisplaySettings {
+    NumberFormat format = NumberFormat::STD;
+    int digits = 0;
+    CoordinateMode coord_mode = CoordinateMode::RECT;
+    std::string angle_mode = "RAD"; // RAD or DEG
+};
+
 // Display representation
 std::string repr(const Object& obj);
+std::string repr(const Object& obj, const DisplaySettings& settings);
 
 // Serialization
 TypeTag     type_tag(const Object& obj);

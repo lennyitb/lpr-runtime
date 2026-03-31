@@ -167,6 +167,9 @@ CommandRegistry::CommandRegistry() {
     register_symbolic_commands();
     register_list_commands();
     register_matrix_commands();
+    register_display_commands();
+    register_flag_commands();
+    register_conversion_commands();
 }
 
 void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
@@ -3020,6 +3023,293 @@ void CommandRegistry::register_matrix_commands() {
 
     // ABS on vectors (Euclidean norm)
     // This is handled in the arithmetic overload section
+}
+
+// ---- Display Commands ----
+
+void CommandRegistry::register_display_commands() {
+    register_command("STD", [](Store& s, Context&) {
+        s.set_meta("number_format", "STD");
+        s.set_meta("format_digits", "0");
+    });
+
+    register_command("FIX", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        if (!std::holds_alternative<Integer>(obj))
+            throw std::runtime_error("FIX: expected Integer");
+        int n = std::get<Integer>(obj).convert_to<int>();
+        if (n < 0 || n > 11) throw std::runtime_error("FIX: digits must be 0-11");
+        s.set_meta("number_format", "FIX");
+        s.set_meta("format_digits", std::to_string(n));
+    });
+
+    register_command("SCI", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        if (!std::holds_alternative<Integer>(obj))
+            throw std::runtime_error("SCI: expected Integer");
+        int n = std::get<Integer>(obj).convert_to<int>();
+        if (n < 0 || n > 11) throw std::runtime_error("SCI: digits must be 0-11");
+        s.set_meta("number_format", "SCI");
+        s.set_meta("format_digits", std::to_string(n));
+    });
+
+    register_command("ENG", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        if (!std::holds_alternative<Integer>(obj))
+            throw std::runtime_error("ENG: expected Integer");
+        int n = std::get<Integer>(obj).convert_to<int>();
+        if (n < 0 || n > 11) throw std::runtime_error("ENG: digits must be 0-11");
+        s.set_meta("number_format", "ENG");
+        s.set_meta("format_digits", std::to_string(n));
+    });
+
+    register_command("RECT", [](Store& s, Context&) {
+        s.set_meta("coordinate_mode", "RECT");
+    });
+
+    register_command("POLAR", [](Store& s, Context&) {
+        s.set_meta("coordinate_mode", "POLAR");
+    });
+
+    register_command("SPHERICAL", [](Store& s, Context&) {
+        s.set_meta("coordinate_mode", "SPHERICAL");
+    });
+}
+
+// ---- Flag Commands ----
+
+void CommandRegistry::register_flag_commands() {
+    register_command("SF", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(obj)) name = std::get<String>(obj).value;
+        else if (std::holds_alternative<Name>(obj)) name = std::get<Name>(obj).value;
+        else throw std::runtime_error("SF: expected String or Name");
+        s.set_flag(name, 0, "1");
+    });
+
+    register_command("CF", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(obj)) name = std::get<String>(obj).value;
+        else if (std::holds_alternative<Name>(obj)) name = std::get<Name>(obj).value;
+        else throw std::runtime_error("CF: expected String or Name");
+        s.set_flag(name, 0, "0");
+    });
+
+    register_command("FS?", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(obj)) name = std::get<String>(obj).value;
+        else if (std::holds_alternative<Name>(obj)) name = std::get<Name>(obj).value;
+        else throw std::runtime_error("FS?: expected String or Name");
+        auto flag = s.get_flag(name);
+        if (flag && std::get<1>(*flag) == "1")
+            s.push(Integer(1));
+        else
+            s.push(Integer(0));
+    });
+
+    register_command("FC?", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(obj)) name = std::get<String>(obj).value;
+        else if (std::holds_alternative<Name>(obj)) name = std::get<Name>(obj).value;
+        else throw std::runtime_error("FC?: expected String or Name");
+        auto flag = s.get_flag(name);
+        if (!flag || std::get<1>(*flag) == "0")
+            s.push(Integer(1));
+        else
+            s.push(Integer(0));
+    });
+
+    register_command("SFLAG", [](Store& s, Context&) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object name_obj = s.pop();
+        Object val_obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(name_obj)) name = std::get<String>(name_obj).value;
+        else if (std::holds_alternative<Name>(name_obj)) name = std::get<Name>(name_obj).value;
+        else throw std::runtime_error("SFLAG: expected String or Name for flag name");
+
+        if (std::holds_alternative<Integer>(val_obj)) {
+            s.set_flag(name, 1, std::get<Integer>(val_obj).str());
+        } else if (std::holds_alternative<Real>(val_obj)) {
+            s.set_flag(name, 2, std::get<Real>(val_obj).str());
+        } else if (std::holds_alternative<String>(val_obj)) {
+            s.set_flag(name, 3, std::get<String>(val_obj).value);
+        } else {
+            throw std::runtime_error("SFLAG: unsupported value type");
+        }
+    });
+
+    register_command("RFLAG", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        std::string name;
+        if (std::holds_alternative<String>(obj)) name = std::get<String>(obj).value;
+        else if (std::holds_alternative<Name>(obj)) name = std::get<Name>(obj).value;
+        else throw std::runtime_error("RFLAG: expected String or Name");
+
+        auto flag = s.get_flag(name);
+        if (!flag) {
+            throw std::runtime_error("RFLAG: undefined flag '" + name + "'");
+        }
+        int type_tag = std::get<0>(*flag);
+        const std::string& value = std::get<1>(*flag);
+        switch (type_tag) {
+            case 0: s.push(Integer(value == "1" ? 1 : 0)); break;
+            case 1: s.push(Integer(value)); break;
+            case 2: s.push(Real(value)); break;
+            case 3: s.push(String{value}); break;
+            default: throw std::runtime_error("RFLAG: unknown type tag");
+        }
+    });
+
+    register_command("STOF", [](Store& s, Context&) {
+        auto flags = s.all_flags();
+        List result;
+        for (auto& [name, type_tag, value] : flags) {
+            List pair;
+            pair.items.push_back(String{name});
+            switch (type_tag) {
+                case 0: pair.items.push_back(Integer(value == "1" ? 1 : 0)); break;
+                case 1: pair.items.push_back(Integer(value)); break;
+                case 2: pair.items.push_back(Real(value)); break;
+                case 3: pair.items.push_back(String{value}); break;
+                default: pair.items.push_back(String{value}); break;
+            }
+            result.items.push_back(std::move(pair));
+        }
+        s.push(std::move(result));
+    });
+
+    register_command("RCLF", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        if (!std::holds_alternative<List>(obj))
+            throw std::runtime_error("RCLF: expected List");
+        const auto& list = std::get<List>(obj);
+
+        s.clear_all_flags();
+        for (const auto& item : list.items) {
+            if (!std::holds_alternative<List>(item))
+                throw std::runtime_error("RCLF: each element must be a { name value } list");
+            const auto& pair = std::get<List>(item);
+            if (pair.items.size() != 2)
+                throw std::runtime_error("RCLF: each element must have exactly 2 items");
+            if (!std::holds_alternative<String>(pair.items[0]))
+                throw std::runtime_error("RCLF: flag name must be a String");
+            const std::string& name = std::get<String>(pair.items[0]).value;
+            const auto& val = pair.items[1];
+
+            if (std::holds_alternative<Integer>(val)) {
+                // Could be bool (0/1) or integer — store as integer type
+                int iv = std::get<Integer>(val).convert_to<int>();
+                if (iv == 0 || iv == 1) {
+                    s.set_flag(name, 0, std::to_string(iv));
+                } else {
+                    s.set_flag(name, 1, std::get<Integer>(val).str());
+                }
+            } else if (std::holds_alternative<Real>(val)) {
+                s.set_flag(name, 2, std::get<Real>(val).str());
+            } else if (std::holds_alternative<String>(val)) {
+                s.set_flag(name, 3, std::get<String>(val).value);
+            } else {
+                throw std::runtime_error("RCLF: unsupported value type");
+            }
+        }
+    });
+}
+
+// ---- Conversion Commands ----
+
+void CommandRegistry::register_conversion_commands() {
+    register_command("->Q", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        double dv;
+        if (std::holds_alternative<Real>(obj)) {
+            dv = std::get<Real>(obj).convert_to<double>();
+        } else if (std::holds_alternative<Integer>(obj)) {
+            // Integer is already exact — wrap as rational
+            s.push(Rational(std::get<Integer>(obj), Integer(1)));
+            return;
+        } else {
+            throw std::runtime_error("->Q: expected Real or Integer");
+        }
+
+        // Continued fraction approximation
+        double x = dv;
+        bool neg = x < 0;
+        if (neg) x = -x;
+        Integer h0(0), h1(1), k0(1), k1(0);
+        double rem = x;
+        for (int i = 0; i < 30; ++i) {
+            Integer a(static_cast<long long>(std::floor(rem)));
+            Integer h2 = a * h1 + h0;
+            Integer k2 = a * k1 + k0;
+            h0 = h1; h1 = h2;
+            k0 = k1; k1 = k2;
+            double frac = rem - std::floor(rem);
+            if (frac < 1e-12) break;
+            rem = 1.0 / frac;
+            if (rem > 1e12) break;
+        }
+        if (neg) h1 = -h1;
+        s.push(Rational(h1, k1));
+    });
+
+    register_command("HMS->", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        Real hms;
+        if (std::holds_alternative<Real>(obj))
+            hms = std::get<Real>(obj);
+        else if (std::holds_alternative<Integer>(obj))
+            hms = Real(std::get<Integer>(obj));
+        else
+            throw std::runtime_error("HMS->: expected Real or Integer");
+
+        bool neg = hms < 0;
+        if (neg) hms = -hms;
+        Real h = floor(hms);
+        Real frac = (hms - h) * 100;
+        Real m = floor(frac);
+        Real sec = (frac - m) * 100;
+        Real result = h + m / 60 + sec / 3600;
+        if (neg) result = -result;
+        s.push(result);
+    });
+
+    register_command("->HMS", [](Store& s, Context&) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object obj = s.pop();
+        Real dec;
+        if (std::holds_alternative<Real>(obj))
+            dec = std::get<Real>(obj);
+        else if (std::holds_alternative<Integer>(obj))
+            dec = Real(std::get<Integer>(obj));
+        else
+            throw std::runtime_error("->HMS: expected Real or Integer");
+
+        bool neg = dec < 0;
+        if (neg) dec = -dec;
+        Real h = floor(dec);
+        Real rem = (dec - h) * 60;
+        Real m = floor(rem);
+        Real sec = (rem - m) * 60;
+        Real result = h + m / 100 + sec / 10000;
+        if (neg) result = -result;
+        s.push(result);
+    });
 }
 
 } // namespace lpr

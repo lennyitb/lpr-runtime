@@ -675,6 +675,107 @@ ASSEMBLE                    => 'SQ(Y+1)+3'
 
 ---
 
+## Display Settings
+
+Commands for controlling how numbers are displayed. Settings are stored in the `meta` table and persist across sessions.
+
+### Number Format Modes
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `STD`   | `( -- )` | Restore full-precision display (default) |
+| `FIX`   | `( n -- )` | Fixed-point display with n decimal places (0-11) |
+| `SCI`   | `( n -- )` | Scientific notation with n significant digits (0-11) |
+| `ENG`   | `( n -- )` | Engineering notation (exponent multiple of 3) with n digits (0-11) |
+
+**Examples:**
+
+```
+3.14159265 4 FIX            => 3.1416
+12345.6789 3 SCI            => 1.235E4
+12345.6789 3 ENG            => 12.346E3
+STD 3.14159265              => 3.14159265
+```
+
+### Coordinate Display Modes
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `RECT`  | `( -- )` | Rectangular Complex display `(re, im)` (default) |
+| `POLAR` | `( -- )` | Polar Complex display `(r, ∠θ)` |
+| `SPHERICAL` | `( -- )` | Spherical coordinate mode |
+
+**Examples:**
+
+```
+(3., 4.) POLAR 4 FIX        => (5.0000, ∠0.9273)
+RECT (3., 4.)               => (3., 4.)
+```
+
+Format settings persist across `lpr_exec` calls and are stored in `meta` keys `number_format`, `format_digits`, and `coordinate_mode`.
+
+---
+
+## Flag Registry
+
+An extensible, typed flag registry backed by a dedicated `flags` table. Flags are named (string keys) and can hold booleans, integers, reals, or strings — unlike the HP 50g's fixed 128-flag bitfield.
+
+### Boolean Flags
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SF`    | `( 'name' -- )` | Set named flag to true |
+| `CF`    | `( 'name' -- )` | Clear named flag (set to false) |
+| `FS?`   | `( 'name' -- n )` | Push 1 if flag exists and is true, 0 otherwise |
+| `FC?`   | `( 'name' -- n )` | Push 1 if flag is absent or false, 0 otherwise |
+
+### Typed Flags
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SFLAG` | `( value 'name' -- )` | Store typed flag (Integer, Real, or String) |
+| `RFLAG` | `( 'name' -- value )` | Recall typed flag with original type; error if undefined |
+
+### Bulk Flag Access
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `STOF`  | `( -- list )` | Push List of all flags as `{ name value }` pairs |
+| `RCLF`  | `( list -- )` | Replace all flags from a saved list |
+
+**Examples:**
+
+```
+'exact_mode' SF              set boolean flag
+'exact_mode' FS?             => 1
+'exact_mode' CF
+'exact_mode' FS?             => 0
+1000 'max_iterations' SFLAG  store typed flag
+'max_iterations' RFLAG       => 1000
+STOF                         => { { "exact_mode" 0 } { "max_iterations" 1000 } }
+```
+
+---
+
+## Conversions
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `->Q`   | `( x -- rational )` | Approximate Real as nearest Rational (continued fraction) |
+| `HMS->` | `( h.mmss -- hours )` | Convert H.MMSSss format to decimal hours |
+| `->HMS` | `( hours -- h.mmss )` | Convert decimal hours to H.MMSSss format |
+
+**Examples:**
+
+```
+0.5 ->Q                      => 1/2
+3.14159265358979 ->Q          => 355/113 (or similar)
+2.3000 HMS->                  => 2.5
+2.5 ->HMS                     => 2.3
+```
+
+---
+
 ## Data Types
 
 ### Numeric Types
@@ -867,3 +968,21 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 142 | `DET` | Matrix | 1 | Determinant |
 | 143 | `CROSS` | Matrix | 2 | Cross product |
 | 144 | `DOT` | Matrix | 2 | Dot product |
+| 145 | `STD` | Display | 0 | Standard full-precision display |
+| 146 | `FIX` | Display | 1 | Fixed-point display |
+| 147 | `SCI` | Display | 1 | Scientific notation |
+| 148 | `ENG` | Display | 1 | Engineering notation |
+| 149 | `RECT` | Display | 0 | Rectangular coordinate mode |
+| 150 | `POLAR` | Display | 0 | Polar coordinate mode |
+| 151 | `SPHERICAL` | Display | 0 | Spherical coordinate mode |
+| 152 | `SF` | Flags | 1 | Set boolean flag |
+| 153 | `CF` | Flags | 1 | Clear boolean flag |
+| 154 | `FS?` | Flags | 1 | Test flag set |
+| 155 | `FC?` | Flags | 1 | Test flag clear |
+| 156 | `SFLAG` | Flags | 2 | Store typed flag |
+| 157 | `RFLAG` | Flags | 1 | Recall typed flag |
+| 158 | `STOF` | Flags | 0 | Save all flags to list |
+| 159 | `RCLF` | Flags | 1 | Restore flags from list |
+| 160 | `->Q` | Conversion | 1 | Real to Rational |
+| 161 | `HMS->` | Conversion | 1 | H.MMSSss to decimal hours |
+| 162 | `->HMS` | Conversion | 1 | Decimal hours to H.MMSSss |

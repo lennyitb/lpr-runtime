@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <linenoise.h>
 
 static void display_stack(lpr_ctx* ctx) {
     int d = lpr_depth(ctx);
@@ -29,6 +30,18 @@ static void print_usage() {
     std::cout << "Usage: lpr-cli [-e expression]... [database.lpr]\n"
               << "  -e expr   Execute expression and exit\n"
               << "  -h        Show this help\n";
+}
+
+static void seed_linenoise_history(lpr_ctx* ctx) {
+    int count = lpr_history_count(ctx);
+    // Load oldest-first so linenoise has the most recent at the end
+    for (int i = count - 1; i >= 0; --i) {
+        char* entry = lpr_history_entry(ctx, i);
+        if (entry) {
+            linenoiseHistoryAdd(entry);
+            lpr_free(entry);
+        }
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -80,30 +93,37 @@ int main(int argc, char* argv[]) {
         return exit_code;
     }
 
-    // Interactive REPL mode
-    std::string line;
+    // Interactive REPL mode with linenoise
+    linenoiseSetMultiLine(0);
+    linenoiseHistorySetMaxLen(1000);
+    seed_linenoise_history(ctx);
+
     std::cout << "LPR Runtime v0.1.0\n";
-    while (true) {
-        std::cout << "> ";
-        if (!std::getline(std::cin, line)) break;
+    char* line;
+    while ((line = linenoise("> ")) != nullptr) {
+        std::string input(line);
+        linenoiseFree(line);
 
-        if (line == "q" || line == "quit") break;
+        if (input == "q" || input == "quit") break;
 
-        if (line == "UNDO" || line == "undo") {
+        if (input == "UNDO" || input == "undo") {
             if (!lpr_undo(ctx)) std::cerr << "** Nothing to undo\n";
             display_stack(ctx);
             continue;
         }
-        if (line == "REDO" || line == "redo") {
+        if (input == "REDO" || input == "redo") {
             if (!lpr_redo(ctx)) std::cerr << "** Nothing to redo\n";
             display_stack(ctx);
             continue;
         }
 
-        lpr_result r = lpr_exec(ctx, line.c_str());
+        lpr_result r = lpr_exec(ctx, input.c_str());
         if (!r.ok) {
             display_error(ctx);
         }
+
+        // Add to linenoise history (runtime already recorded it in SQLite)
+        linenoiseHistoryAdd(input.c_str());
 
         display_stack(ctx);
     }

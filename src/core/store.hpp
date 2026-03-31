@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <optional>
+#include <tuple>
 
 struct sqlite3;
 struct sqlite3_stmt;
@@ -68,6 +70,17 @@ public:
     // Generic meta table access
     std::string get_meta(const std::string& key, const std::string& default_val = "");
     void set_meta(const std::string& key, const std::string& value);
+
+    // Flag registry
+    void set_flag(const std::string& name, int type_tag, const std::string& value);
+    std::optional<std::tuple<int, std::string>> get_flag(const std::string& name);
+    std::vector<std::tuple<std::string, int, std::string>> all_flags();
+    void clear_all_flags();
+
+    // Input history
+    void record_input(const std::string& input);
+    int  input_history_count();
+    std::string input_history_entry(int index); // 0 = most recent; empty if out of range
 
 private:
     sqlite3* db_ = nullptr;

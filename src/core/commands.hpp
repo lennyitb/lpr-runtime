@@ -36,6 +36,9 @@ private:
     void register_symbolic_commands();
     void register_list_commands();
     void register_matrix_commands();
+    void register_display_commands();
+    void register_flag_commands();
+    void register_conversion_commands();
 };
 
 } // namespace lpr

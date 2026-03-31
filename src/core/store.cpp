@@ -83,6 +83,15 @@ void Store::create_schema() {
             object_id INTEGER NOT NULL REFERENCES objects(id),
             PRIMARY KEY(seq, group_id, pos)
         );
+        CREATE TABLE IF NOT EXISTS flags (
+            name TEXT PRIMARY KEY,
+            type_tag INTEGER NOT NULL,
+            value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS input_history (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            input TEXT NOT NULL
+        );
     )");
 }
 
@@ -622,6 +631,89 @@ int Store::stash_depth() {
 
 void Store::stash_clear() {
     exec_sql("DELETE FROM stash");
+}
+
+// --- Flags ---
+
+void Store::set_flag(const std::string& name, int type_tag, const std::string& value) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_,
+        "INSERT OR REPLACE INTO flags (name, type_tag, value) VALUES (?, ?, ?)",
+        -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, type_tag);
+    sqlite3_bind_text(stmt, 3, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+std::optional<std::tuple<int, std::string>> Store::get_flag(const std::string& name) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT type_tag, value FROM flags WHERE name = ?", -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+    std::optional<std::tuple<int, std::string>> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        int tag = sqlite3_column_int(stmt, 0);
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        result = std::make_tuple(tag, std::string(val ? val : ""));
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+std::vector<std::tuple<std::string, int, std::string>> Store::all_flags() {
+    std::vector<std::tuple<std::string, int, std::string>> result;
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT name, type_tag, value FROM flags ORDER BY name", -1, &stmt, nullptr);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        int tag = sqlite3_column_int(stmt, 1);
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        result.emplace_back(name ? name : "", tag, val ? val : "");
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void Store::clear_all_flags() {
+    exec_sql("DELETE FROM flags");
+}
+
+// --- Input History ---
+
+void Store::record_input(const std::string& input) {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "INSERT INTO input_history (input) VALUES (?)", -1, &stmt, nullptr);
+    sqlite3_bind_text(stmt, 1, input.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+int Store::input_history_count() {
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM input_history", -1, &stmt, nullptr);
+    int count = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        count = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return count;
+}
+
+std::string Store::input_history_entry(int index) {
+    // index 0 = most recent, so ORDER BY seq DESC LIMIT 1 OFFSET index
+    sqlite3_stmt* stmt = nullptr;
+    sqlite3_prepare_v2(db_,
+        "SELECT input FROM input_history ORDER BY seq DESC LIMIT 1 OFFSET ?",
+        -1, &stmt, nullptr);
+    sqlite3_bind_int(stmt, 1, index);
+    std::string result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (val) result = val;
+    }
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 } // namespace lpr

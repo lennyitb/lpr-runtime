@@ -24,6 +24,7 @@ public:
     // Stack inspection
     int         depth();
     std::string repr_at(int level); // 1-based
+    DisplaySettings current_display_settings();
 
     // Undo/Redo
     bool undo();

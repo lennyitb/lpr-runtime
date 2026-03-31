@@ -1,28 +1,112 @@
 #include "core/object.hpp"
 #include "core/parser.hpp"
 #include <sstream>
+#include <iomanip>
+#include <cmath>
 
 namespace lpr {
+
+// ---------- formatted number helpers ----------
+
+static std::string format_real(const Real& v, const DisplaySettings& ds) {
+    if (ds.format == NumberFormat::STD) {
+        std::string s = v.str();
+        if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
+            s += '.';
+        }
+        return s;
+    }
+
+    double dv = v.convert_to<double>();
+
+    if (ds.format == NumberFormat::FIX) {
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(ds.digits) << dv;
+        return oss.str();
+    }
+
+    if (ds.format == NumberFormat::SCI) {
+        std::ostringstream oss;
+        oss << std::scientific << std::setprecision(ds.digits) << dv;
+        std::string s = oss.str();
+        // Normalize: replace 'e' with 'E', strip leading zeros in exponent
+        auto epos = s.find('e');
+        if (epos == std::string::npos) epos = s.find('E');
+        if (epos != std::string::npos) {
+            char sign = s[epos + 1];
+            std::string exp_digits = s.substr(epos + 2);
+            // Strip leading zeros
+            size_t nz = exp_digits.find_first_not_of('0');
+            if (nz == std::string::npos) exp_digits = "0";
+            else exp_digits = exp_digits.substr(nz);
+            std::string result = s.substr(0, epos) + "E";
+            if (sign == '-') result += "-";
+            result += exp_digits;
+            return result;
+        }
+        return s;
+    }
+
+    if (ds.format == NumberFormat::ENG) {
+        if (dv == 0.0) {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(ds.digits) << 0.0;
+            return oss.str();
+        }
+        double abs_val = std::fabs(dv);
+        int exp3 = static_cast<int>(std::floor(std::log10(abs_val)));
+        exp3 = exp3 - ((exp3 % 3) + 3) % 3 + (exp3 >= 0 ? 0 : 0);
+        // Ensure exponent is multiple of 3
+        exp3 = exp3 - (((exp3 % 3) + 3) % 3);
+        double mantissa = dv / std::pow(10.0, exp3);
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(ds.digits) << mantissa;
+        if (exp3 != 0) {
+            oss << "E" << exp3;
+        }
+        return oss.str();
+    }
+
+    return v.str();
+}
+
+static std::string format_complex(const Complex& v, const DisplaySettings& ds) {
+    if (ds.coord_mode == CoordinateMode::POLAR) {
+        double re = v.first.convert_to<double>();
+        double im = v.second.convert_to<double>();
+        double mag = std::sqrt(re * re + im * im);
+        double ang = std::atan2(im, re);
+        if (ds.angle_mode == "DEG") {
+            ang = ang * 180.0 / M_PI;
+        }
+        Real mag_r(mag);
+        Real ang_r(ang);
+        return "(" + format_real(mag_r, ds) + ", \xE2\x88\xA0" + format_real(ang_r, ds) + ")";
+    }
+    // RECT (and SPHERICAL for 2D complex defaults to RECT display)
+    return "(" + format_real(v.first, ds) + ", " + format_real(v.second, ds) + ")";
+}
 
 // ---------- repr ----------
 
 static std::string repr_tokens(const std::vector<Token>& tokens);
 
 std::string repr(const Object& obj) {
-    return std::visit([](auto&& v) -> std::string {
+    DisplaySettings defaults;
+    return repr(obj, defaults);
+}
+
+std::string repr(const Object& obj, const DisplaySettings& ds) {
+    return std::visit([&ds](auto&& v) -> std::string {
         using T = std::decay_t<decltype(v)>;
         if constexpr (std::is_same_v<T, Integer>) {
             return v.str();
         } else if constexpr (std::is_same_v<T, Real>) {
-            std::string s = v.str();
-            if (s.find('.') == std::string::npos && s.find('e') == std::string::npos && s.find('E') == std::string::npos) {
-                s += '.';
-            }
-            return s;
+            return format_real(v, ds);
         } else if constexpr (std::is_same_v<T, Rational>) {
             return v.str();
         } else if constexpr (std::is_same_v<T, Complex>) {
-            return "(" + v.first.str() + ", " + v.second.str() + ")";
+            return format_complex(v, ds);
         } else if constexpr (std::is_same_v<T, String>) {
             return "\"" + v.value + "\"";
         } else if constexpr (std::is_same_v<T, Program>) {
@@ -37,7 +121,7 @@ std::string repr(const Object& obj) {
             std::string s = "{ ";
             for (size_t i = 0; i < v.items.size(); ++i) {
                 if (i > 0) s += " ";
-                s += repr(v.items[i]);
+                s += repr(Object(v.items[i]), ds);
             }
             s += " }";
             return s;
@@ -47,7 +131,7 @@ std::string repr(const Object& obj) {
                 if (r > 0) s += " ][ ";
                 for (size_t c = 0; c < v.rows[r].size(); ++c) {
                     if (c > 0) s += " ";
-                    s += repr(v.rows[r][c]);
+                    s += repr(Object(v.rows[r][c]), ds);
                 }
             }
             s += " ]]";

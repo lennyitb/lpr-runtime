@@ -25,6 +25,9 @@ void lpr_close(lpr_ctx* ctx) {
 lpr_result lpr_exec(lpr_ctx* ctx, const char* input) {
     if (!ctx || !input) return {0};
     bool ok = ctx->context.exec(input);
+    if (ok) {
+        ctx->context.store().record_input(input);
+    }
     return {ok ? 1 : 0};
 }
 
@@ -68,6 +71,22 @@ char* lpr_get_setting(lpr_ctx* ctx, const char* key) {
     char* result = static_cast<char*>(std::malloc(val.size() + 1));
     if (result) {
         std::memcpy(result, val.c_str(), val.size() + 1);
+    }
+    return result;
+}
+
+int lpr_history_count(lpr_ctx* ctx) {
+    if (!ctx) return 0;
+    return ctx->context.store().input_history_count();
+}
+
+char* lpr_history_entry(lpr_ctx* ctx, int index) {
+    if (!ctx || index < 0) return nullptr;
+    std::string entry = ctx->context.store().input_history_entry(index);
+    if (entry.empty()) return nullptr;
+    char* result = static_cast<char*>(std::malloc(entry.size() + 1));
+    if (result) {
+        std::memcpy(result, entry.c_str(), entry.size() + 1);
     }
     return result;
 }

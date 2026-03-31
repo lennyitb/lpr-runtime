@@ -31,6 +31,20 @@ if(NOT sqlite3_POPULATED)
     target_include_directories(sqlite3 PUBLIC "${sqlite3_SOURCE_DIR}")
 endif()
 
+# --- linenoise ---
+FetchContent_Declare(
+    linenoise
+    GIT_REPOSITORY https://github.com/antirez/linenoise.git
+    GIT_TAG master
+    GIT_SHALLOW TRUE
+)
+FetchContent_GetProperties(linenoise)
+if(NOT linenoise_POPULATED)
+    FetchContent_Populate(linenoise)
+    add_library(linenoise STATIC "${linenoise_SOURCE_DIR}/linenoise.c")
+    target_include_directories(linenoise PUBLIC "${linenoise_SOURCE_DIR}")
+endif()
+
 # --- Catch2 ---
 FetchContent_Declare(
     Catch2
@@ -59,7 +73,7 @@ target_link_libraries(liblpr
 
 # --- lpr-cli executable ---
 add_executable(lpr-cli cli/main.cpp)
-target_link_libraries(lpr-cli PRIVATE liblpr)
+target_link_libraries(lpr-cli PRIVATE liblpr linenoise)
 
 # --- lpr-tests executable ---
 file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")

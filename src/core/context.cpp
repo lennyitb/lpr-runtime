@@ -391,7 +391,25 @@ int Context::depth() {
 
 std::string Context::repr_at(int level) {
     Object obj = store_.peek(level);
-    return repr(obj);
+    return repr(obj, current_display_settings());
+}
+
+DisplaySettings Context::current_display_settings() {
+    DisplaySettings ds;
+    std::string fmt = store_.get_meta("number_format", "STD");
+    if (fmt == "FIX") ds.format = NumberFormat::FIX;
+    else if (fmt == "SCI") ds.format = NumberFormat::SCI;
+    else if (fmt == "ENG") ds.format = NumberFormat::ENG;
+
+    std::string dig = store_.get_meta("format_digits", "0");
+    ds.digits = std::stoi(dig);
+
+    std::string cm = store_.get_meta("coordinate_mode", "RECT");
+    if (cm == "POLAR") ds.coord_mode = CoordinateMode::POLAR;
+    else if (cm == "SPHERICAL") ds.coord_mode = CoordinateMode::SPHERICAL;
+
+    ds.angle_mode = store_.get_meta("angle_mode", "RAD");
+    return ds;
 }
 
 bool Context::undo() {
