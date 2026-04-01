@@ -96,8 +96,8 @@ static void render_display(lpr_ctx* ctx, bool last_error) {
     std::string vars = get_vars(ctx);
     int depth = lpr_depth(ctx);
 
-    // Reserve lines: status(1) + sep(1) + vars(1) + sep(1) + sep(1) + input(1) = 6
-    int stack_lines = std::max(4, height - 6);
+    // Reserve lines: status(1) + sep(1) + vars(1) + sep(1) + sep(1) + prompt(1) + newline(1) = 7
+    int stack_lines = std::max(4, height - 7);
 
     Elements stack_elems;
     for (int level = stack_lines; level >= 1; --level) {
@@ -133,8 +133,8 @@ static void render_display(lpr_ctx* ctx, bool last_error) {
                                  Dimension::Fit(document));
     Render(screen, document);
 
-    // Clear terminal, cursor to top-left, print display
-    std::cout << "\033[2J\033[H";
+    // Cursor to top-left, print display
+    std::cout << "\033[H\033[J";
     screen.Print();
     std::cout.flush();
 }
@@ -154,6 +154,10 @@ static void run_tui(lpr_ctx* ctx) {
     linenoiseSetMultiLine(0);
     linenoiseHistorySetMaxLen(1000);
     seed_linenoise_history(ctx);
+
+    // Enter alternate screen buffer
+    std::cout << "\033[?1049h";
+    std::cout.flush();
 
     bool last_error = false;
     char* line;
@@ -188,8 +192,8 @@ static void run_tui(lpr_ctx* ctx) {
         linenoiseHistoryAdd(input.c_str());
     }
 
-    // Restore terminal: clear and move cursor to top
-    std::cout << "\033[2J\033[H";
+    // Leave alternate screen buffer (restores original terminal content)
+    std::cout << "\033[?1049l";
     std::cout.flush();
 }
 
