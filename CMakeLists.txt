@@ -33,9 +33,8 @@ endif()
 # --- linenoise ---
 FetchContent_Declare(
     linenoise
-    GIT_REPOSITORY https://github.com/antirez/linenoise.git
-    GIT_TAG master
-    GIT_SHALLOW TRUE
+    URL https://github.com/antirez/linenoise/archive/refs/heads/master.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_GetProperties(linenoise)
 if(NOT linenoise_POPULATED)
@@ -47,9 +46,8 @@ endif()
 # --- FTXUI ---
 FetchContent_Declare(
     ftxui
-    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
-    GIT_TAG v5.0.0
-    GIT_SHALLOW TRUE
+    URL https://github.com/ArthurSonzogni/FTXUI/archive/refs/tags/v5.0.0.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -58,9 +56,8 @@ FetchContent_MakeAvailable(ftxui)
 # --- Catch2 ---
 FetchContent_Declare(
     Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.5.2
-    GIT_SHALLOW TRUE
+    URL https://github.com/catchorg/Catch2/archive/refs/tags/v3.5.2.tar.gz
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(Catch2)
 
