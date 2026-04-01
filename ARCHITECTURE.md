@@ -1,6 +1,6 @@
 # LPR Runtime Architecture
 
-**LPR** (Lenny Polish Reverse) is a portable C++ runtime for an RPL virtual
+**LPR** (Lenny Polish Reverse) is a portable, embeddable C++ runtime for an RPL virtual
 machine inspired by the HP 50g. It exposes a minimal C-compatible API designed
 around a single paradigm: *everything is a command*.
 
