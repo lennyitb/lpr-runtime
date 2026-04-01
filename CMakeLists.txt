@@ -45,6 +45,17 @@ if(NOT linenoise_POPULATED)
     target_include_directories(linenoise PUBLIC "${linenoise_SOURCE_DIR}")
 endif()
 
+# --- FTXUI ---
+FetchContent_Declare(
+    ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI.git
+    GIT_TAG v5.0.0
+    GIT_SHALLOW TRUE
+)
+set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(ftxui)
+
 # --- Catch2 ---
 FetchContent_Declare(
     Catch2
@@ -73,7 +84,7 @@ target_link_libraries(liblpr
 
 # --- lpr-cli executable ---
 add_executable(lpr-cli cli/main.cpp)
-target_link_libraries(lpr-cli PRIVATE liblpr linenoise)
+target_link_libraries(lpr-cli PRIVATE liblpr linenoise ftxui::screen ftxui::dom)
 
 # --- lpr-tests executable ---
 file(GLOB_RECURSE TEST_SOURCES "tests/*.cpp")

@@ -5,6 +5,8 @@
 #include <cstring>
 #include <linenoise.h>
 
+// --- Non-interactive helpers (used by -e mode) ---
+
 static void display_stack(lpr_ctx* ctx) {
     int d = lpr_depth(ctx);
     if (d == 0) return;
@@ -32,9 +34,113 @@ static void print_usage() {
               << "  -h        Show this help\n";
 }
 
+// --- Full-screen display rendering (FTXUI DOM only) ---
+
+#include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/screen.hpp>
+#include <ftxui/screen/terminal.hpp>
+
+using namespace ftxui;
+
+static std::string get_path(lpr_ctx* ctx) {
+    char* p = lpr_path(ctx);
+    std::string result = p ? p : "{ HOME }";
+    lpr_free(p);
+    return result;
+}
+
+static std::string get_modes(lpr_ctx* ctx) {
+    std::string result;
+
+    char* angle = lpr_get_setting(ctx, "angle_mode");
+    result += angle ? angle : "RAD";
+    lpr_free(angle);
+
+    result += " ";
+    char* coord = lpr_get_setting(ctx, "coordinate_mode");
+    std::string cm = coord ? coord : "RECT";
+    lpr_free(coord);
+    if (cm == "SPHERICAL") cm = "SPHER";
+    result += cm;
+
+    result += " ";
+    char* fmt = lpr_get_setting(ctx, "number_format");
+    std::string nf = fmt ? fmt : "STD";
+    lpr_free(fmt);
+    if (nf != "STD") {
+        char* dig = lpr_get_setting(ctx, "format_digits");
+        if (dig) {
+            nf += " " + std::string(dig);
+            lpr_free(dig);
+        }
+    }
+    result += nf;
+
+    return result;
+}
+
+static std::string get_vars(lpr_ctx* ctx) {
+    char* v = lpr_dir_contents(ctx);
+    std::string result = v ? v : "(empty)";
+    lpr_free(v);
+    return result;
+}
+
+static void render_display(lpr_ctx* ctx, bool last_error) {
+    auto term = Terminal::Size();
+    int width = term.dimx;
+    int height = term.dimy;
+
+    std::string path = get_path(ctx);
+    std::string modes = get_modes(ctx);
+    std::string vars = get_vars(ctx);
+    int depth = lpr_depth(ctx);
+
+    // Reserve lines: status(1) + sep(1) + vars(1) + sep(1) + sep(1) + input(1) = 6
+    int stack_lines = std::max(4, height - 6);
+
+    Elements stack_elems;
+    for (int level = stack_lines; level >= 1; --level) {
+        std::string label = std::to_string(level) + ":";
+        while (label.size() < 4) label = " " + label;
+
+        if (level <= depth) {
+            char* s = lpr_repr(ctx, level);
+            std::string val = s ? s : "?";
+            lpr_free(s);
+            auto val_elem = text(val);
+            if (level == 1 && last_error) {
+                val_elem = val_elem | color(Color::Red);
+            }
+            stack_elems.push_back(
+                hbox({text(label + "  "), filler(), val_elem})
+            );
+        } else {
+            stack_elems.push_back(text(label));
+        }
+    }
+
+    auto document = vbox({
+        hbox({text(path), filler(), text(modes)}),
+        separator(),
+        hbox({text("VARS: "), text(vars) | dim}),
+        separator(),
+        vbox(stack_elems),
+        separator(),
+    });
+
+    auto screen = Screen::Create(Dimension::Fixed(width),
+                                 Dimension::Fit(document));
+    Render(screen, document);
+
+    // Clear terminal, cursor to top-left, print display
+    std::cout << "\033[2J\033[H";
+    screen.Print();
+    std::cout.flush();
+}
+
 static void seed_linenoise_history(lpr_ctx* ctx) {
     int count = lpr_history_count(ctx);
-    // Load oldest-first so linenoise has the most recent at the end
     for (int i = count - 1; i >= 0; --i) {
         char* entry = lpr_history_entry(ctx, i);
         if (entry) {
@@ -43,6 +149,51 @@ static void seed_linenoise_history(lpr_ctx* ctx) {
         }
     }
 }
+
+static void run_tui(lpr_ctx* ctx) {
+    linenoiseSetMultiLine(0);
+    linenoiseHistorySetMaxLen(1000);
+    seed_linenoise_history(ctx);
+
+    bool last_error = false;
+    char* line;
+
+    while (true) {
+        render_display(ctx, last_error);
+
+        line = linenoise("> ");
+        if (!line) break;  // Ctrl-D
+
+        std::string input(line);
+        linenoiseFree(line);
+
+        if (input.empty()) continue;
+        if (input == "q" || input == "quit") break;
+
+        if (input == "UNDO" || input == "undo") {
+            lpr_undo(ctx);
+            last_error = false;
+            linenoiseHistoryAdd(input.c_str());
+            continue;
+        }
+        if (input == "REDO" || input == "redo") {
+            lpr_redo(ctx);
+            last_error = false;
+            linenoiseHistoryAdd(input.c_str());
+            continue;
+        }
+
+        lpr_result r = lpr_exec(ctx, input.c_str());
+        last_error = !r.ok;
+        linenoiseHistoryAdd(input.c_str());
+    }
+
+    // Restore terminal: clear and move cursor to top
+    std::cout << "\033[2J\033[H";
+    std::cout.flush();
+}
+
+// --- Main ---
 
 int main(int argc, char* argv[]) {
     const char* db_path = nullptr;
@@ -93,40 +244,8 @@ int main(int argc, char* argv[]) {
         return exit_code;
     }
 
-    // Interactive REPL mode with linenoise
-    linenoiseSetMultiLine(0);
-    linenoiseHistorySetMaxLen(1000);
-    seed_linenoise_history(ctx);
-
-    std::cout << "LPR Runtime v0.1.0\n";
-    char* line;
-    while ((line = linenoise("> ")) != nullptr) {
-        std::string input(line);
-        linenoiseFree(line);
-
-        if (input == "q" || input == "quit") break;
-
-        if (input == "UNDO" || input == "undo") {
-            if (!lpr_undo(ctx)) std::cerr << "** Nothing to undo\n";
-            display_stack(ctx);
-            continue;
-        }
-        if (input == "REDO" || input == "redo") {
-            if (!lpr_redo(ctx)) std::cerr << "** Nothing to redo\n";
-            display_stack(ctx);
-            continue;
-        }
-
-        lpr_result r = lpr_exec(ctx, input.c_str());
-        if (!r.ok) {
-            display_error(ctx);
-        }
-
-        // Add to linenoise history (runtime already recorded it in SQLite)
-        linenoiseHistoryAdd(input.c_str());
-
-        display_stack(ctx);
-    }
+    // Interactive TUI mode
+    run_tui(ctx);
 
     lpr_close(ctx);
     return 0;

@@ -61,8 +61,10 @@ char*       lpr_repr(lpr_ctx* ctx, int level); // caller must lpr_free()
 int         lpr_undo(lpr_ctx* ctx);            // returns 1 on success
 int         lpr_redo(lpr_ctx* ctx);            // returns 1 on success
 
-// Settings
+// Settings & directory inspection
 char*       lpr_get_setting(lpr_ctx* ctx, const char* key); // caller must lpr_free()
+char*       lpr_path(lpr_ctx* ctx);             // "{ HOME DIR ... }"; caller frees
+char*       lpr_dir_contents(lpr_ctx* ctx);     // space-separated var/dir names; caller frees
 
 // Command history
 int         lpr_history_count(lpr_ctx* ctx);            // total entries
@@ -72,8 +74,9 @@ char*       lpr_history_entry(lpr_ctx* ctx, int index);  // 0 = most recent; cal
 void        lpr_free(void* ptr);
 ```
 
-Eleven functions plus one deallocator. Settings and history are read-only from the
-C API — display modes and flags are set via RPL commands through `lpr_exec`.
+Thirteen functions plus one deallocator. Settings, directory state, and history
+are read-only from the C API — display modes and flags are set via RPL commands
+through `lpr_exec`.
 
 ### Usage example (from C)
 
@@ -333,8 +336,35 @@ table. Two C API functions (`lpr_history_count`, `lpr_history_entry`) provide
 index-based read access (0 = most recent). History lives in the same SQLite
 database, so it persists, backs up, and restores with all other runtime state.
 
-The CLI populates linenoise's in-memory history from the SQLite table on startup.
+The TUI seeds its in-memory history from the SQLite table on startup.
 After each input, the runtime records it; no separate CLI-side file is needed.
+
+### Terminal UI
+
+The interactive CLI (`lpr-cli` without `-e`) uses FTXUI to present a full-screen
+HP 50g-style display:
+
+```
+{ HOME UTILS }                      DEG RECT STD
+─────────────────────────────────────────────────
+VARS: x y pi radius area/
+─────────────────────────────────────────────────
+ 4:
+ 3:                        3.14159265358979
+ 2:                                      42
+ 1:                                       7
+─────────────────────────────────────────────────
+> _
+```
+
+- **Status bar**: current directory path (HP 50g format) and mode indicators
+  (angle, coordinate, number format).
+- **VARS line**: variables and subdirectories in the current directory.
+- **Stack area**: numbered levels with right-aligned values, fills available
+  terminal height. Errors on level 1 are highlighted in red.
+- **Input line**: text input with up/down arrow command history.
+
+The non-interactive `-e` mode bypasses the TUI entirely and prints to stdout.
 
 ### Execution Flow of `lpr_exec(ctx, input)`
 
@@ -409,7 +439,7 @@ lpr-runtime/
 │       ├── bridge.hpp          # Abstract CASBridge interface
 │       └── symengine_backend.cpp
 ├── cli/
-│   └── main.cpp                # Interactive REPL and -e batch execution
+│   └── main.cpp                # Full-screen TUI (FTXUI) and -e batch execution
 └── tests/
     ├── CMakeLists.txt
     ├── test_stack.cpp
@@ -428,6 +458,7 @@ lpr-runtime/
 |-----------------------|----------------------------|--------------------|
 | Boost.Multiprecision  | Arbitrary-precision numbers | FetchContent / system |
 | SQLite3               | Persistence & state        | FetchContent / system |
+| FTXUI                 | Full-screen terminal UI    | FetchContent       |
 | SymEngine             | Computer algebra (phase 1) | FetchContent       |
 | Catch2                | Unit testing               | FetchContent       |
 

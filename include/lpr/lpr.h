@@ -25,6 +25,8 @@ int        lpr_undo(lpr_ctx* ctx);
 int        lpr_redo(lpr_ctx* ctx);
 lpr_state  lpr_get_state(lpr_ctx* ctx);
 char*      lpr_get_setting(lpr_ctx* ctx, const char* key);
+char*      lpr_path(lpr_ctx* ctx);
+char*      lpr_dir_contents(lpr_ctx* ctx);
 int        lpr_history_count(lpr_ctx* ctx);
 char*      lpr_history_entry(lpr_ctx* ctx, int index);
 void       lpr_free(void* ptr);

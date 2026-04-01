@@ -75,6 +75,53 @@ char* lpr_get_setting(lpr_ctx* ctx, const char* key) {
     return result;
 }
 
+char* lpr_path(lpr_ctx* ctx) {
+    if (!ctx) return nullptr;
+    auto& store = ctx->context.store();
+    std::string path = store.dir_path(store.current_dir());
+    // Format as HP 50g style: "HOME/DIR" → "{ HOME DIR }"
+    std::string result = "{";
+    std::string segment;
+    for (char c : path) {
+        if (c == '/') {
+            if (!segment.empty()) {
+                result += " " + segment;
+                segment.clear();
+            }
+        } else {
+            segment += c;
+        }
+    }
+    if (!segment.empty()) {
+        result += " " + segment;
+    }
+    result += " }";
+    char* buf = static_cast<char*>(std::malloc(result.size() + 1));
+    if (buf) std::memcpy(buf, result.c_str(), result.size() + 1);
+    return buf;
+}
+
+char* lpr_dir_contents(lpr_ctx* ctx) {
+    if (!ctx) return nullptr;
+    auto& store = ctx->context.store();
+    int dir = store.current_dir();
+    auto vars = store.list_variables(dir);
+    auto dirs = store.list_subdirectories(dir);
+    std::string result;
+    for (auto& v : vars) {
+        if (!result.empty()) result += " ";
+        result += v;
+    }
+    for (auto& d : dirs) {
+        if (!result.empty()) result += " ";
+        result += d + "/";
+    }
+    if (result.empty()) return nullptr;
+    char* buf = static_cast<char*>(std::malloc(result.size() + 1));
+    if (buf) std::memcpy(buf, result.c_str(), result.size() + 1);
+    return buf;
+}
+
 int lpr_history_count(lpr_ctx* ctx) {
     if (!ctx) return 0;
     return ctx->context.store().input_history_count();
