@@ -170,6 +170,7 @@ CommandRegistry::CommandRegistry() {
     register_display_commands();
     register_flag_commands();
     register_conversion_commands();
+    register_cas_commands();
 }
 
 void CommandRegistry::register_command(const std::string& name, CommandFn fn) {
@@ -3308,6 +3309,76 @@ void CommandRegistry::register_conversion_commands() {
         Real sec = (rem - m) * 60;
         Real result = h + m / 100 + sec / 10000;
         if (neg) result = -result;
+        s.push(result);
+    });
+}
+
+// ---- CAS commands ----
+
+void CommandRegistry::register_cas_commands() {
+    // DIFF: (level 2: Symbol expr, level 1: Name var) → Symbol derivative
+    register_command("DIFF", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object var_obj = s.pop();
+        Object expr_obj = s.pop();
+        if (!std::holds_alternative<Name>(var_obj)) {
+            s.push(expr_obj);
+            s.push(var_obj);
+            throw std::runtime_error("DIFF: variable must be a name");
+        }
+        auto result = ctx.cas().differentiate(expr_obj, std::get<Name>(var_obj).value);
+        s.push(result);
+    });
+
+    // INTEGRATE: (level 2: Symbol expr, level 1: Name var) → Symbol antiderivative
+    register_command("INTEGRATE", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object var_obj = s.pop();
+        Object expr_obj = s.pop();
+        if (!std::holds_alternative<Name>(var_obj)) {
+            s.push(expr_obj);
+            s.push(var_obj);
+            throw std::runtime_error("INTEGRATE: variable must be a name");
+        }
+        auto result = ctx.cas().integrate(expr_obj, std::get<Name>(var_obj).value);
+        s.push(result);
+    });
+
+    // SOLVE: (level 2: Symbol expr, level 1: Name var) → List of solutions
+    register_command("SOLVE", [](Store& s, Context& ctx) {
+        if (s.depth() < 2) throw std::runtime_error("Too few arguments");
+        Object var_obj = s.pop();
+        Object expr_obj = s.pop();
+        if (!std::holds_alternative<Name>(var_obj)) {
+            s.push(expr_obj);
+            s.push(var_obj);
+            throw std::runtime_error("SOLVE: variable must be a name");
+        }
+        auto result = ctx.cas().solve(expr_obj, std::get<Name>(var_obj).value);
+        s.push(result);
+    });
+
+    // SIMPLIFY: (level 1: Symbol expr) → Symbol simplified
+    register_command("SIMPLIFY", [](Store& s, Context& ctx) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object expr_obj = s.pop();
+        auto result = ctx.cas().simplify(expr_obj);
+        s.push(result);
+    });
+
+    // EXPAND: (level 1: Symbol expr) → Symbol expanded
+    register_command("EXPAND", [](Store& s, Context& ctx) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object expr_obj = s.pop();
+        auto result = ctx.cas().expand(expr_obj);
+        s.push(result);
+    });
+
+    // FACTOR: (level 1: Symbol expr) → Symbol factored
+    register_command("FACTOR", [](Store& s, Context& ctx) {
+        if (s.depth() < 1) throw std::runtime_error("Too few arguments");
+        Object expr_obj = s.pop();
+        auto result = ctx.cas().factor(expr_obj);
         s.push(result);
     });
 }

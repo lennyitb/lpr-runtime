@@ -3,6 +3,10 @@
 #include <string>
 #include <vector>
 #include <cstring>
+#include <csignal>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/select.h>
 #include <linenoise.h>
 
 // --- Non-interactive helpers (used by -e mode) ---
@@ -139,6 +143,15 @@ static void render_display(lpr_ctx* ctx, bool last_error) {
     std::cout.flush();
 }
 
+// --- SIGWINCH self-pipe ---
+
+static int sigwinch_pipe[2] = {-1, -1};
+
+static void sigwinch_handler(int) {
+    char c = 1;
+    (void)write(sigwinch_pipe[1], &c, 1);
+}
+
 static void seed_linenoise_history(lpr_ctx* ctx) {
     int count = lpr_history_count(ctx);
     for (int i = count - 1; i >= 0; --i) {
@@ -155,18 +168,63 @@ static void run_tui(lpr_ctx* ctx) {
     linenoiseHistorySetMaxLen(1000);
     seed_linenoise_history(ctx);
 
+    // Set up SIGWINCH self-pipe (non-blocking read end)
+    pipe(sigwinch_pipe);
+    fcntl(sigwinch_pipe[0], F_SETFL, O_NONBLOCK);
+    struct sigaction sa = {};
+    sa.sa_handler = sigwinch_handler;
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGWINCH, &sa, nullptr);
+
     // Enter alternate screen buffer
     std::cout << "\033[?1049h";
     std::cout.flush();
 
     bool last_error = false;
-    char* line;
 
     while (true) {
         render_display(ctx, last_error);
 
-        line = linenoise("> ");
-        if (!line) break;  // Ctrl-D
+        // Start non-blocking line edit
+        struct linenoiseState ls;
+        char buf[1024];
+        linenoiseEditStart(&ls, -1, -1, buf, sizeof(buf), "> ");
+
+        char* line = nullptr;
+        bool got_line = false;
+        bool eof = false;
+
+        while (!got_line && !eof) {
+            fd_set rfds;
+            FD_ZERO(&rfds);
+            FD_SET(ls.ifd, &rfds);
+            FD_SET(sigwinch_pipe[0], &rfds);
+            int maxfd = std::max(ls.ifd, sigwinch_pipe[0]) + 1;
+
+            int ret = select(maxfd, &rfds, nullptr, nullptr, nullptr);
+            if (ret <= 0) continue;
+
+            if (FD_ISSET(sigwinch_pipe[0], &rfds)) {
+                // Drain the pipe
+                char tmp;
+                while (read(sigwinch_pipe[0], &tmp, 1) == 1) {}
+                // Redraw on resize
+                linenoiseHide(&ls);
+                render_display(ctx, last_error);
+                linenoiseShow(&ls);
+            }
+
+            if (FD_ISSET(ls.ifd, &rfds)) {
+                line = linenoiseEditFeed(&ls);
+                if (line == linenoiseEditMore) continue;
+                if (line == nullptr) eof = true;
+                else got_line = true;
+            }
+        }
+
+        linenoiseEditStop(&ls);
+
+        if (eof) break;
 
         std::string input(line);
         linenoiseFree(line);
@@ -195,6 +253,11 @@ static void run_tui(lpr_ctx* ctx) {
     // Leave alternate screen buffer (restores original terminal content)
     std::cout << "\033[?1049l";
     std::cout.flush();
+
+    // Clean up
+    close(sigwinch_pipe[0]);
+    close(sigwinch_pipe[1]);
+    signal(SIGWINCH, SIG_DFL);
 }
 
 // --- Main ---

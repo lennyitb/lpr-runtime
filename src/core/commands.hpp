@@ -2,6 +2,7 @@
 
 #include "core/object.hpp"
 #include "core/store.hpp"
+#include "cas/bridge.hpp"
 #include <functional>
 #include <string>
 #include <unordered_map>
@@ -39,6 +40,7 @@ private:
     void register_display_commands();
     void register_flag_commands();
     void register_conversion_commands();
+    void register_cas_commands();
 };
 
 } // namespace lpr

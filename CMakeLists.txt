@@ -53,6 +53,35 @@ set(FTXUI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ftxui)
 
+# --- SymEngine (CAS backend, must come after Boost) ---
+# Use our custom FindBoost.cmake so SymEngine finds FetchContent'd Boost
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+FetchContent_Declare(
+    symengine
+    GIT_REPOSITORY https://github.com/symengine/symengine.git
+    GIT_TAG        v0.14.0
+    GIT_SHALLOW    TRUE
+)
+set(INTEGER_CLASS "boostmp" CACHE STRING "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(WITH_SYMENGINE_RCP ON CACHE BOOL "" FORCE)
+set(WITH_MPFR OFF CACHE BOOL "" FORCE)
+set(WITH_MPC OFF CACHE BOOL "" FORCE)
+set(WITH_FLINT OFF CACHE BOOL "" FORCE)
+set(WITH_ARB OFF CACHE BOOL "" FORCE)
+set(WITH_LLVM OFF CACHE BOOL "" FORCE)
+set(WITH_PTHREAD OFF CACHE BOOL "" FORCE)
+set(WITH_OPENMP OFF CACHE BOOL "" FORCE)
+set(WITH_BFD OFF CACHE BOOL "" FORCE)
+set(WITH_ECM OFF CACHE BOOL "" FORCE)
+set(WITH_PRIMESIEVE OFF CACHE BOOL "" FORCE)
+set(WITH_PIRANHA OFF CACHE BOOL "" FORCE)
+set(WITH_TCMALLOC OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(symengine)
+
 # --- Catch2 ---
 FetchContent_Declare(
     Catch2
@@ -76,6 +105,12 @@ target_link_libraries(liblpr
     PUBLIC
         Boost::multiprecision
         sqlite3
+        symengine
+)
+target_include_directories(liblpr
+    PRIVATE
+        ${symengine_SOURCE_DIR}
+        ${symengine_BINARY_DIR}
 )
 
 # --- lpr-cli executable ---

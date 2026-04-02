@@ -3,6 +3,7 @@
 #include "core/store.hpp"
 #include "core/commands.hpp"
 #include "core/object.hpp"
+#include <memory>
 #include <vector>
 #include <string>
 #include <unordered_map>
@@ -10,10 +11,12 @@
 
 namespace lpr {
 
+class CASBridge; // forward declare
+
 class Context {
 public:
     explicit Context(const char* db_path);
-    ~Context() = default;
+    ~Context();
 
     Context(const Context&) = delete;
     Context& operator=(const Context&) = delete;
@@ -35,6 +38,9 @@ public:
 
     Store& store() { return store_; }
 
+    // CAS bridge accessor
+    CASBridge& cas();
+
     // Local variable scope stack
     void push_locals(const std::unordered_map<std::string, Object>& frame);
     void pop_locals();
@@ -43,6 +49,7 @@ public:
 private:
     Store store_;
     CommandRegistry commands_;
+    std::unique_ptr<CASBridge> cas_bridge_;
     std::vector<std::unordered_map<std::string, Object>> local_scopes_;
 };
 

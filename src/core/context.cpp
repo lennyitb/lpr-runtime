@@ -1,5 +1,7 @@
 #include "core/context.hpp"
 #include "core/parser.hpp"
+#include "cas/bridge.hpp"
+#include "cas/symengine_bridge.hpp"
 #include <stdexcept>
 #include <algorithm>
 
@@ -53,7 +55,12 @@ static std::vector<Token> collect_until(
 
 Context::Context(const char* db_path)
     : store_(db_path)
+    , cas_bridge_(std::make_unique<SymEngineBridge>())
 {}
+
+Context::~Context() = default;
+
+CASBridge& Context::cas() { return *cas_bridge_; }
 
 bool Context::exec(const std::string& input) {
     store_.begin();

@@ -675,6 +675,56 @@ ASSEMBLE                    => 'SQ(Y+1)+3'
 
 ---
 
+## Computer Algebra (CAS)
+
+Symbolic algebra commands powered by SymEngine. These operate on Symbol expressions (quoted with `'...'`) and delegate to the CAS bridge interface.
+
+### Calculus
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `DIFF` | `'expr' 'var' →` `'derivative'` | Symbolic differentiation with respect to variable |
+| `INTEGRATE` | `'expr' 'var' →` `'antiderivative'` | Indefinite integration (no constant of integration) |
+
+### Equation Solving
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SOLVE` | `'expr' 'var' →` `{ solutions }` | Solve `expr = 0` for variable; returns List of solutions |
+
+### Expression Manipulation
+
+| Command | Stack Effect | Description |
+|---------|-------------|-------------|
+| `SIMPLIFY` | `'expr' →` `'simplified'` | Algebraic simplification (combine terms, cancel factors) |
+| `EXPAND` | `'expr' →` `'expanded'` | Distribute products, expand powers of sums |
+| `FACTOR` | `'expr' →` `'factored'` | Factor polynomial over the integers |
+
+### Examples
+
+```
+'X^2+3*X' 'X' DIFF         => '3 + 2*X'
+'SIN(X)' 'X' DIFF           => 'COS(X)'
+'2*X+3' 'X' INTEGRATE       => '3*X + X^2'
+'COS(X)' 'X' INTEGRATE      => 'SIN(X)'
+'X^2-4' 'X' SOLVE           => { 2 -2 }
+'3*X-1' 'X' SOLVE           => { 1/3 }
+'(X+1)^2' EXPAND            => '1 + 2*X + X^2'
+'X+X' SIMPLIFY              => '2*X'
+'X^2-4' FACTOR              => '(2 + X)*(-2 + X)'
+'X^2+2*X+1' FACTOR          => '(1 + X)^2'
+```
+
+### Known Limitations
+
+- **INTEGRATE** handles polynomials and basic trig/exponential forms. Complex integrands may produce an error. A future Giac backend will expand coverage.
+- **SOLVE** handles single-variable polynomial and some elementary equations. Systems of equations and numeric solvers are not yet supported.
+- **FACTOR** factors over the integers only. Expressions irreducible over the integers (e.g., `'X^2+1'`) are returned unchanged.
+- SymEngine may reorder terms in output (e.g., `'3 + 2*X'` instead of `'2*X + 3'`). Results are mathematically equivalent.
+- Expressions must use RPL-style uppercase function names: `SIN`, `COS`, `TAN`, `EXP`, `LN`, `SQRT`, etc.
+
+---
+
 ## Display Settings
 
 Commands for controlling how numbers are displayed. Settings are stored in the `meta` table and persist across sessions.
@@ -986,3 +1036,9 @@ On error, the stack is **restored** to its pre-command state (transactional roll
 | 160 | `->Q` | Conversion | 1 | Real to Rational |
 | 161 | `HMS->` | Conversion | 1 | H.MMSSss to decimal hours |
 | 162 | `->HMS` | Conversion | 1 | Decimal hours to H.MMSSss |
+| 163 | `DIFF` | CAS | 2 | Symbolic differentiation |
+| 164 | `INTEGRATE` | CAS | 2 | Indefinite integration |
+| 165 | `SOLVE` | CAS | 2 | Solve equation for variable |
+| 166 | `SIMPLIFY` | CAS | 1 | Algebraic simplification |
+| 167 | `EXPAND` | CAS | 1 | Expand expression |
+| 168 | `FACTOR` | CAS | 1 | Factor polynomial over integers |

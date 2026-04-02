@@ -396,9 +396,40 @@ public:
 };
 ```
 
-`SymEngineBridge` implements this first. `GiacBridge` can slot in later.
-The bridge converts between our `Symbol` representation and the CAS library's
-native expression type.
+`Context` owns a `std::unique_ptr<CASBridge>`, defaulting to `SymEngineBridge`, accessible via `ctx.cas()`. CAS commands in `commands.cpp` pop arguments from the stack, delegate to the bridge, and push results back.
+
+### SymEngine Conversion Strategy
+
+`SymEngineBridge` follows a **parse → operate → serialize** cycle:
+
+1. Extract the Symbol's string value (e.g., `"X^2+3*X"`)
+2. Transform RPL conventions to SymEngine conventions: uppercase function names to lowercase (`SIN` → `sin`, `LN` → `log`), `^` to `**`, `SQ(x)` to `(x)**2`, `LOG(x)` to `log(x)/log(10)`
+3. Parse via `SymEngine::parse()` into an expression tree
+4. Perform the algebraic operation (`diff()`, `expand()`, `solve()`, etc.)
+5. Convert back via `__str__()` and reverse-map function names to uppercase RPL conventions
+
+### Function Name Mapping
+
+| RPL | SymEngine | Notes |
+|-----|-----------|-------|
+| SIN, COS, TAN | sin, cos, tan | Direct mapping |
+| ASIN, ACOS, ATAN | asin, acos, atan | Direct mapping |
+| EXP | exp (represented as E^x) | Pow with Euler's number |
+| LN | log | Natural logarithm |
+| LOG | log(x)/log(10) | Base-10 logarithm |
+| SQRT | sqrt | Direct mapping |
+| SQ | pow(x, 2) | Rewritten before parsing |
+| ABS | Abs | Direct mapping |
+
+### Integration Strategy
+
+SymEngine lacks a top-level `integrate()` function. `SymEngineBridge::integrate()` implements term-by-term integration for expanded expressions, handling: constants, power terms (`x^n`), `sin(x)`, `cos(x)`, `e^x`, sums, and constant-coefficient products. Unsupported integrands produce a descriptive error. The future Giac backend will provide broader integration coverage.
+
+### Factoring Strategy
+
+`factor()` uses `SymEngine::solve()` to find roots (restricted to reals), then determines multiplicity via successive derivatives evaluated at each root. The factored form is reconstructed as `leading_coeff * ∏(x - root_i)^mult_i`. Expressions irreducible over the integers are returned unchanged.
+
+`GiacBridge` can slot in later to provide more complete CAS coverage.
 
 ---
 
@@ -436,8 +467,9 @@ lpr-runtime/
 │   │   ├── program_ctrl.cpp    # EVAL IFT IFTE
 │   │   └── filesystem.cpp      # STO RCL PURGE CRDIR CD UPDIR PGDIR PATH HOME VARS
 │   └── cas/
-│       ├── bridge.hpp          # Abstract CASBridge interface
-│       └── symengine_backend.cpp
+│       ├── bridge.hpp              # Abstract CASBridge interface
+│       ├── symengine_bridge.hpp    # SymEngineBridge declaration
+│       └── symengine_bridge.cpp    # SymEngine implementation + conversion layer
 ├── cli/
 │   └── main.cpp                # Full-screen TUI (FTXUI) and -e batch execution
 └── tests/
@@ -459,7 +491,7 @@ lpr-runtime/
 | Boost.Multiprecision  | Arbitrary-precision numbers | FetchContent / system |
 | SQLite3               | Persistence & state        | FetchContent / system |
 | FTXUI                 | Full-screen terminal UI    | FetchContent       |
-| SymEngine             | Computer algebra (phase 1) | FetchContent       |
+| SymEngine v0.14.0     | Computer algebra (CAS bridge, `INTEGER_CLASS=boostmp`) | FetchContent (git) |
 | Catch2                | Unit testing               | FetchContent       |
 
 Build system: **CMake 3.20+**, targeting **C++17**.
