@@ -100,7 +100,22 @@ std::vector<ExprToken> tokenize_expression(const std::string& expr) {
         throw std::runtime_error(std::string("Unexpected character in expression: ") + c);
     }
 
-    return tokens;
+    // Insert implicit '*' for adjacent operands (e.g. ")(", "2(", ")x")
+    std::vector<ExprToken> result;
+    for (size_t j = 0; j < tokens.size(); ++j) {
+        result.push_back(tokens[j]);
+        if (j + 1 < tokens.size()) {
+            auto lt = tokens[j].type;
+            auto rt = tokens[j + 1].type;
+            bool left_val  = (lt == ExprTokenType::RParen || lt == ExprTokenType::Number);
+            bool right_val = (rt == ExprTokenType::LParen || rt == ExprTokenType::Number || rt == ExprTokenType::Name);
+            if (left_val && right_val) {
+                result.push_back({ExprTokenType::Op, "*"});
+            }
+        }
+    }
+
+    return result;
 }
 
 // --- Precedence (public) ---
@@ -213,6 +228,24 @@ std::vector<ExprToken> shunting_yard(const std::vector<ExprToken>& tokens) {
 
 // --- RPN Evaluator ---
 
+// Convert a numeric Object to its string form for embedding in symbolic expressions.
+std::string expr_repr(const Object& obj) {
+    if (std::holds_alternative<Integer>(obj))  return std::get<Integer>(obj).str();
+    if (std::holds_alternative<Rational>(obj)) return std::get<Rational>(obj).str();
+    if (std::holds_alternative<Symbol>(obj))   return std::get<Symbol>(obj).value;
+    return repr(obj);
+}
+
+// Build a symbolic binary expression with precedence-aware parentheses.
+Object symbolic_binary_expr(const Object& a, const Object& b, const std::string& op) {
+    std::string sa = expr_repr(a);
+    std::string sb = expr_repr(b);
+    int prec = (op == "+" || op == "-") ? 1 : 2;
+    if (needs_parens(sa, prec)) sa = "(" + sa + ")";
+    if (needs_parens(sb, prec)) sb = "(" + sb + ")";
+    return Symbol{sa + op + sb};
+}
+
 // Numeric helpers (reuse same promotion logic as commands.cpp)
 int numeric_rank(const Object& obj) {
     if (std::holds_alternative<Integer>(obj))  return 0;
@@ -286,7 +319,7 @@ Object apply_binary(const std::string& op, const Object& a, const Object& b) {
     throw std::runtime_error("Unknown operator: " + op);
 }
 
-Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
+Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx, bool exact) {
     std::vector<Object> stack;
 
     for (const auto& tok : rpn) {
@@ -322,14 +355,28 @@ Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
             std::string upper = tok.value;
             std::transform(upper.begin(), upper.end(), upper.begin(),
                 [](unsigned char c) { return std::toupper(c); });
+
+            // Track whether input was exact (Integer or Rational)
+            bool arg_was_exact = std::holds_alternative<Integer>(arg)
+                              || std::holds_alternative<Rational>(arg);
+
             ctx.store().push(arg);
             ctx.execute_tokens({Token::make_command(upper)});
-            stack.push_back(ctx.store().pop());
+            Object result = ctx.store().pop();
+
+            // If input was exact but output is Real, exactness was lost — keep symbolic
+            if (exact && arg_was_exact && std::holds_alternative<Real>(result)) {
+                stack.push_back(Symbol{upper + "(" + expr_repr(arg) + ")"});
+            } else {
+                stack.push_back(result);
+            }
         } else if (tok.type == ExprTokenType::Op) {
             if (tok.value == "NEG") {
                 if (stack.empty()) throw std::runtime_error("Malformed expression");
                 Object a = stack.back(); stack.pop_back();
-                if (std::holds_alternative<Integer>(a)) {
+                if (std::holds_alternative<Symbol>(a)) {
+                    stack.push_back(Symbol{"-(" + std::get<Symbol>(a).value + ")"});
+                } else if (std::holds_alternative<Integer>(a)) {
                     stack.push_back(Integer(-std::get<Integer>(a)));
                 } else if (std::holds_alternative<Rational>(a)) {
                     stack.push_back(Rational(-std::get<Rational>(a)));
@@ -342,7 +389,11 @@ Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
                 if (stack.size() < 2) throw std::runtime_error("Malformed expression");
                 Object b = stack.back(); stack.pop_back();
                 Object a = stack.back(); stack.pop_back();
-                stack.push_back(apply_binary(tok.value, a, b));
+                if (std::holds_alternative<Symbol>(a) || std::holds_alternative<Symbol>(b)) {
+                    stack.push_back(symbolic_binary_expr(a, b, tok.value));
+                } else {
+                    stack.push_back(apply_binary(tok.value, a, b));
+                }
             }
         }
     }
@@ -356,7 +407,13 @@ Object eval_rpn(const std::vector<ExprToken>& rpn, Context& ctx) {
 Object eval_expression(const std::string& expr, Context& ctx) {
     auto tokens = tokenize_expression(expr);
     auto rpn = shunting_yard(tokens);
-    return eval_rpn(rpn, ctx);
+    return eval_rpn(rpn, ctx, true);
+}
+
+Object eval_expression_numeric(const std::string& expr, Context& ctx) {
+    auto tokens = tokenize_expression(expr);
+    auto rpn = shunting_yard(tokens);
+    return eval_rpn(rpn, ctx, false);
 }
 
 } // namespace lpr

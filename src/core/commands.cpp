@@ -1052,10 +1052,21 @@ void CommandRegistry::register_type_commands() {
     });
 
     // →NUM (also accept ->NUM)
-    auto to_num = [](Store& s, Context&) {
+    auto to_num = [](Store& s, Context& ctx) {
         if (s.depth() < 1) throw std::runtime_error("Too few arguments");
         Object a = s.pop();
-        if (std::holds_alternative<Integer>(a)) {
+        if (std::holds_alternative<Symbol>(a)) {
+            // Evaluate the symbolic expression numerically
+            Object result = eval_expression_numeric(std::get<Symbol>(a).value, ctx);
+            // Ensure result is Real
+            if (std::holds_alternative<Integer>(result)) {
+                s.push(Real(std::get<Integer>(result)));
+            } else if (std::holds_alternative<Rational>(result)) {
+                s.push(Real(std::get<Rational>(result)));
+            } else {
+                s.push(result);
+            }
+        } else if (std::holds_alternative<Integer>(a)) {
             s.push(Real(std::get<Integer>(a)));
         } else if (std::holds_alternative<Rational>(a)) {
             s.push(Real(std::get<Rational>(a)));

@@ -163,3 +163,58 @@ TEST_CASE("EVAL on Symbol: complex expression", "[expression][eval]") {
     REQUIRE(ctx.depth() == 1);
     REQUIRE(ctx.repr_at(1) == "15");
 }
+
+// --- Exact evaluation (symbolic preservation) ---
+
+TEST_CASE("EVAL exact: sqrt of non-perfect square stays symbolic", "[expression][eval]") {
+    Context ctx(nullptr);
+    Object r = eval_expression("sqrt(14)", ctx);
+    REQUIRE(std::holds_alternative<Symbol>(r));
+    REQUIRE(std::get<Symbol>(r).value == "SQRT(14)");
+}
+
+TEST_CASE("EVAL exact: sqrt of perfect square returns integer", "[expression][eval]") {
+    Context ctx(nullptr);
+    Object r = eval_expression("sqrt(4)", ctx);
+    REQUIRE(std::holds_alternative<Integer>(r));
+    REQUIRE(std::get<Integer>(r) == 2);
+}
+
+TEST_CASE("EVAL exact: expression with irrational stays symbolic", "[expression][eval]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("'sqrt(2+12)/((2+3)*(8-2))' EVAL"));
+    REQUIRE(ctx.depth() == 1);
+    auto obj = ctx.store().pop();
+    REQUIRE(std::holds_alternative<Symbol>(obj));
+    REQUIRE(std::get<Symbol>(obj).value == "SQRT(14)/30");
+}
+
+TEST_CASE("EVAL exact: pure arithmetic still numeric", "[expression][eval]") {
+    Context ctx(nullptr);
+    Object r = eval_expression("2+3", ctx);
+    REQUIRE(std::holds_alternative<Integer>(r));
+    REQUIRE(std::get<Integer>(r) == 5);
+}
+
+TEST_CASE("EVAL exact: rational result stays rational", "[expression][eval]") {
+    Context ctx(nullptr);
+    Object r = eval_expression("1/3+1/6", ctx);
+    REQUIRE(std::holds_alternative<Rational>(r));
+    REQUIRE(std::get<Rational>(r) == Rational(Integer(1), Integer(2)));
+}
+
+TEST_CASE("->NUM on symbolic expression", "[expression][eval]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("'sqrt(2)' EVAL ->NUM"));
+    REQUIRE(ctx.depth() == 1);
+    auto obj = ctx.store().pop();
+    REQUIRE(std::holds_alternative<Real>(obj));
+}
+
+TEST_CASE("EVAL exact: implicit multiplication with symbolic", "[expression][eval]") {
+    Context ctx(nullptr);
+    REQUIRE(ctx.exec("'sqrt(2+12)/((2+3)(8-2))' EVAL"));
+    REQUIRE(ctx.depth() == 1);
+    auto obj = ctx.store().pop();
+    REQUIRE(std::holds_alternative<Symbol>(obj));
+}
